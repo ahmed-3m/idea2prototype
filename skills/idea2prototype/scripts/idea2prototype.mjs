@@ -72,40 +72,72 @@ async function cmdNew(rest) {
 // ---------------------------------------------------------------------------
 // add
 // ---------------------------------------------------------------------------
+const FEATURES = {
+  'api-crud': {
+    appliesTo: ['web', 'api'],
+    files: (o) => ({
+      [`routes/${o.resource}.mjs`]: 'route.tmpl.mjs',
+      [`tests/${o.resource}.test.mjs`]: 'test.tmpl.mjs',
+    }),
+    summary: (o) => [
+      `routes/${o.resource}.mjs   GET/POST /api/${o.resource} + GET/PUT/DELETE /api/${o.resource}/:id`,
+      `tests/${o.resource}.test.mjs  CRUD roundtrip + validation`,
+    ],
+  },
+  'auth-local': {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/auth.mjs': 'route.tmpl.mjs',
+      'tests/auth.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/auth.mjs   register/login/logout/me — scrypt hashes + HMAC-signed cookies',
+      'tests/auth.test.mjs  full session flow incl. tamper + validation cases',
+      'protect routes: import { requireAuth } from "./auth.mjs"',
+    ],
+  },
+};
+
 async function cmdAdd(rest) {
   const feature = rest[0]?.startsWith('--') ? undefined : rest[0];
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
-  if (!feature) die('usage: idea2prototype add api-crud --resource <name>');
+  const available = Object.keys(FEATURES).join(', ');
+  if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
+  const def = FEATURES[feature] ?? ((() => die(`unknown feature "${feature}" — available: ${available}`))());
 
   const marker = await loadMarker();
+  if (!def.appliesTo.includes(marker.template)) {
+    die(`${feature} applies to ${def.appliesTo.join('/')} templates (this project: ${marker.template})`);
+  }
+
   if (feature === 'api-crud') {
-    if (!['web', 'api'].includes(marker.template)) {
-      die(`api-crud applies to web/api templates (this project: ${marker.template})`);
-    }
     const resource = opts.resource ?? die('--resource <name> is required (e.g. --resource todos)');
     if (!/^[a-z][a-z0-9-]*$/.test(resource)) {
       die(`invalid resource name "${resource}" — lowercase letters, digits, dashes`);
     }
-    const routePath = join(process.cwd(), 'routes', `${resource}.mjs`);
-    if (existsSync(routePath)) die(`routes/${resource}.mjs already exists`);
-
-    const routeTmpl = await readFile(join(FEATURES_DIR, 'api-crud', 'route.tmpl.mjs'), 'utf8');
-    const testTmpl = await readFile(join(FEATURES_DIR, 'api-crud', 'test.tmpl.mjs'), 'utf8');
-    await mkdir(join(process.cwd(), 'routes'), { recursive: true });
-    await mkdir(join(process.cwd(), 'tests'), { recursive: true });
-    await writeFile(routePath, routeTmpl.replaceAll('{{resource}}', resource));
-    await writeFile(join(process.cwd(), 'tests', `${resource}.test.mjs`), testTmpl.replaceAll('{{resource}}', resource));
-
-    marker.features.push({ name: 'api-crud', resource, addedAt: new Date().toISOString() });
-    await writeFile(join(process.cwd(), '.idea2prototype.json'), JSON.stringify(marker, null, 2) + '\n');
-
-    SAY(`added api-crud resource "${resource}"`);
-    SAY(`  routes/${resource}.mjs   GET/POST /api/${resource} + GET/PUT/DELETE /api/${resource}/:id`);
-    SAY(`  tests/${resource}.test.mjs  CRUD roundtrip + validation`);
-    SAY(`  verify: npm run check`);
-  } else {
-    die(`unknown feature "${feature}" — available: api-crud`);
+    opts.resource = resource;
   }
+
+  const files = def.files(opts);
+  for (const dest of Object.keys(files)) {
+    if (existsSync(join(process.cwd(), dest))) die(`${dest} already exists`);
+  }
+  for (const [dest, tmplFile] of Object.entries(files)) {
+    const tmpl = await readFile(join(FEATURES_DIR, feature, tmplFile), 'utf8');
+    await mkdir(dirname(join(process.cwd(), dest)), { recursive: true });
+    await writeFile(join(process.cwd(), dest), tmpl.replaceAll('{{resource}}', opts.resource ?? ''));
+  }
+
+  marker.features.push({
+    name: feature,
+    ...(opts.resource ? { resource: opts.resource } : {}),
+    addedAt: new Date().toISOString(),
+  });
+  await writeFile(join(process.cwd(), '.idea2prototype.json'), JSON.stringify(marker, null, 2) + '\n');
+
+  SAY(`added ${feature}${opts.resource ? ` resource "${opts.resource}"` : ''}`);
+  for (const line of def.summary(opts)) SAY(`  ${line}`);
+  SAY(`  verify: npm run check`);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +288,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add api-crud --resource <name>   add a JSON-file CRUD resource + tests`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype list                             available templates and features`);

@@ -33,6 +33,16 @@ test('add api-crud keeps the web project green', async (t) => {
   assert.match(stdout, /5 tests passed/);
 });
 
+test('add auth-local keeps the web project green', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-auth-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  await i2p(['add', 'auth-local'], { cwd: join(dir, 'app') });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /4 tests passed/); // 3 web + 1 auth session flow
+});
+
 test('scaffolds the api template and passes check', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-api-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

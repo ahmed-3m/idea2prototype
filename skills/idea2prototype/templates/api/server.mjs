@@ -63,15 +63,16 @@ function readBody(req, limit = 1e6) {
   });
 }
 
-function sendJson(res, status, payload) {
+function sendJson(res, status, payload, headers = {}) {
   if (status === 204 || status === 304) {
-    res.writeHead(status);
+    res.writeHead(status, headers);
     return res.end();
   }
   const data = JSON.stringify(payload);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(data),
+    ...headers,
   });
   res.end(data);
 }
@@ -98,8 +99,8 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
             return sendJson(res, 400, { error: err.message });
           }
         }
-        const [status, payload] = await handler(ctx);
-        return sendJson(res, status, payload);
+        const [status, payload, headers] = await handler(ctx);
+        return sendJson(res, status, payload, headers);
       }
       if (url.pathname === '/') {
         return sendJson(res, 200, {
