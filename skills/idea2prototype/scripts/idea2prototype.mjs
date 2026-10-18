@@ -289,11 +289,61 @@ async function cmdList() {
   const templates = (await readdir(TEMPLATES_DIR, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name !== 'features')
     .map((d) => d.name);
-  const features = (await readdir(FEATURES_DIR, { withFileTypes: true }))
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
   SAY(`templates: ${templates.join(', ')}`);
-  SAY(`features:  ${features.map((f) => `${f} (web/api)`).join(', ')}`);
+  SAY(`features:  ${Object.entries(FEATURES).map(([name, def]) => `${name} (${def.appliesTo.join('/')})`).join(', ')}`);
+}
+
+// map — compact repo map (paths + LOC + exports) so an agent can decide what
+// to read instead of loading whole files into context.
+async function cmdMap(rest) {
+  const dir = rest.find((a) => !a.startsWith('--'));
+  const asJson = rest.includes('--json');
+  const root = resolve(process.cwd(), dir ?? '.');
+  if (!existsSync(root) || !statSync(root).isDirectory()) die(`no such directory: ${root}`);
+
+  const SKIP = new Set(['node_modules', '.git', 'data', 'uploads', 'dist', 'coverage']);
+  const code = [];
+  const other = [];
+  async function walk(current, prefix) {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(join(current, entry.name), rel);
+      else if (/\.(mjs|js)$/.test(entry.name)) {
+        const text = await readFile(join(current, entry.name), 'utf8');
+        code.push({ path: rel, loc: text.split('\n').length, exports: findExports(text) });
+      } else other.push(rel);
+    }
+  }
+  await walk(root, '');
+  code.sort((a, b) => a.path.localeCompare(b.path));
+  const totalLoc = code.reduce((n, f) => n + f.loc, 0);
+
+  if (asJson) {
+    SAY(JSON.stringify({ files: code, staticAssets: other }, null, 2));
+  } else {
+    SAY(`map — ${code.length} code files, ${totalLoc} LOC (${other.length} static files omitted)`);
+    for (const f of code.slice(0, 30)) {
+      const exports = f.exports.length ? `  → ${f.exports.join(', ')}` : '';
+      SAY(`  ${f.path.padEnd(36)} ${String(f.loc).padStart(4)} LOC${exports}`);
+    }
+    if (code.length > 30) SAY(`  … +${code.length - 30} more files`);
+  }
+}
+
+function findExports(text) {
+  const names = new Set();
+  for (const m of text.matchAll(/export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)/g)) {
+    names.add(m[1]);
+  }
+  for (const m of text.matchAll(/export\s*\{([^}]+)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop();
+      if (name) names.add(name);
+    }
+  }
+  if (/export\s+default\s*[\[{(]/.test(text)) names.add('default');
+  return [...names];
 }
 
 function help() {
@@ -303,6 +353,7 @@ function help() {
   SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
+  SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
   SAY(`  idea2prototype list                             available templates and features`);
 }
 
@@ -395,6 +446,7 @@ try {
     case 'add': await cmdAdd(rest); break;
     case 'check': await cmdCheck(rest); break;
     case 'verify': await cmdVerify(rest); break;
+    case 'map': await cmdMap(rest); break;
     case 'list': await cmdList(); break;
     case 'version': case '--version': case '-v': SAY(VERSION); break;
     case 'help': case undefined: case '--help': case '-h': help(); break;

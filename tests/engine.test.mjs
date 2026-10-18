@@ -114,6 +114,17 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
   );
 });
 
+test('map lists code files with LOC and exports', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-map-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  await i2p(['add', 'api-crud', '--resource', 'todos'], { cwd: join(dir, 'app') });
+  const { stdout } = await i2p(['map'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /map — 5 code files/);
+  assert.match(stdout, /server\.mjs.*→.*start/);
+  assert.match(stdout, /routes\/todos\.mjs.*→.*default/);
+});
+
 test('list shows templates and features', async () => {
   const { stdout } = await i2p(['list'], { cwd: HERE });
   assert.match(stdout, /templates: api, cli, web/);
