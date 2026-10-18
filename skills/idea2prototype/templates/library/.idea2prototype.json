@@ -1,0 +1,9 @@
+{
+  "tool": "idea2prototype",
+  "version": "0.4.0",
+  "template": "library",
+  "name": "{{name}}",
+  "slug": "{{slug}}",
+  "createdAt": "",
+  "features": []
+}

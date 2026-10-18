@@ -3,9 +3,11 @@
 // Zero dependencies. Requires Node >= 18.17 (built-in test runner with TAP reporter).
 //
 // Commands:
-//   idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]
-//   idea2prototype add api-crud --resource <name>
-//   idea2prototype check [--json]
+//   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
+//   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload
+//   idea2prototype check [--json]    syntax + tests + boot, compact verdict
+//   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
+//   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
 //   idea2prototype list
 //
 // `check` prints a compact verdict (~10 lines) so an agent never reads raw logs.
@@ -15,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');
@@ -30,7 +32,7 @@ const FAIL = (...args) => console.error(...args);
 async function cmdNew(rest) {
   const opts = parseFlags(rest, ['template', 'name', 'idea']);
   const dir = opts._[0];
-  if (!dir) die('usage: idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]');
+  if (!dir) die('usage: idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]');
 
   const template = opts.template ?? 'web';
   const templateDir = join(TEMPLATES_DIR, template);
@@ -65,7 +67,11 @@ async function cmdNew(rest) {
 
   SAY(`prototype ready: ${slug} (${template} template, zero dependencies)`);
   SAY(`  spec:   ${join(dir, 'PROTOTYPE.md')}  <- fill Goal + Core flows before coding`);
-  SAY(`  run:    cd ${dir} && ${template === 'cli' ? 'node cli.mjs help' : 'npm start'}`);
+  if (template === 'library') {
+    SAY(`  use:    import { createStore, memoAsync } from "${join(dir, 'index.mjs')}"`);
+  } else {
+    SAY(`  run:    cd ${dir} && ${template === 'cli' ? 'node cli.mjs help' : 'npm start'}`);
+  }
   SAY(`  verify: cd ${dir} && npm run check`);
 }
 
@@ -173,20 +179,29 @@ async function cmdVerify(rest) {
 }
 
 async function runChecks(projectDir, asJson) {
+  const marker = await readMarker(projectDir); // null for foreign projects (verify mode)
   const steps = [];
   const syntax = await stepSyntax(projectDir);
   steps.push(syntax);
   const tests = await stepTests(projectDir, syntax.status === 'pass');
   steps.push(tests);
-  const boot = await stepBoot(projectDir, tests.status === 'pass');
+  const boot = await stepBoot(projectDir, tests.status === 'pass', marker);
   steps.push(boot);
 
   const failed = steps.filter((s) => s.status === 'fail');
   const summary = failed.length === 0 ? 'PASS' : 'FAIL';
   const passedCount = steps.filter((s) => s.status === 'pass').length;
+  const drifted = marker?.version && marker.version !== VERSION;
 
   if (asJson) {
-    SAY(JSON.stringify({ tool: 'idea2prototype', version: VERSION, project: projectDir, status: summary, steps }, null, 2));
+    SAY(JSON.stringify({
+      tool: 'idea2prototype',
+      version: VERSION,
+      ...(marker ? { scaffoldVersion: marker.version } : {}),
+      project: projectDir,
+      status: summary,
+      steps,
+    }, null, 2));
   } else {
     SAY(``);
     SAY(`Idea2Prototype check — ${summary} (${passedCount}/${steps.length} passed)  [${projectDir}]`);
@@ -194,6 +209,9 @@ async function runChecks(projectDir, asJson) {
       const icon = s.status === 'pass' ? 'PASS ' : s.status === 'fail' ? 'FAIL ' : 'SKIP ';
       SAY(`  ${s.name.padEnd(7)} ${icon} ${s.detail}`);
       for (const note of s.notes ?? []) SAY(`      ${note}`);
+    }
+    if (drifted) {
+      SAY(`  note    scaffolded by v${marker.version}, engine v${VERSION} — generated files may differ`);
     }
   }
   process.exitCode = failed.length ? 1 : 0;
@@ -264,9 +282,27 @@ async function stepTests(projectDir, syntaxPassed) {
   };
 }
 
-async function stepBoot(projectDir, testsPassed) {
-  const serverPath = join(projectDir, 'server.mjs');
+async function stepBoot(projectDir, testsPassed, marker) {
   if (!testsPassed) return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
+
+  // Library projects have no server to probe — boot = import the public API.
+  if (marker?.template === 'library') {
+    const started = Date.now();
+    try {
+      const mod = await import(pathToFileURL(join(projectDir, 'index.mjs')).href);
+      const names = Object.keys(mod);
+      if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
+      return {
+        name: 'boot',
+        status: 'pass',
+        detail: `index.mjs loads in ${Date.now() - started}ms — exports: ${names.join(', ')}`,
+      };
+    } catch (err) {
+      return { name: 'boot', status: 'fail', detail: `import failed: ${String(err?.message ?? err)}` };
+    }
+  }
+
+  const serverPath = join(projectDir, 'server.mjs');
   if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
@@ -360,7 +396,7 @@ function findExports(text) {
 function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
-  SAY(`  idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]`);
+  SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
   SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
@@ -395,6 +431,15 @@ async function loadMarker() {
     return JSON.parse(await readFile(markerPath, 'utf8'));
   } catch {
     die('.idea2prototype.json is not valid JSON');
+  }
+}
+
+// Best-effort marker read for an arbitrary directory (verify/check internals).
+async function readMarker(projectDir) {
+  try {
+    return JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  } catch {
+    return null;
   }
 }
 

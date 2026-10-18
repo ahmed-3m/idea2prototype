@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -124,6 +124,34 @@ test('scaffolds the worker template and passes check', async (t) => {
   assert.match(stdout, /no server\.mjs/);
 });
 
+test('scaffolds the library template and passes check with an import smoke test', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-lib-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'lib', '--template', 'library', '--name', 'My Lib', '--idea', 'state helpers'], { cwd: dir });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'lib') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /boot\s+PASS/);
+  assert.match(stdout, /index\.mjs loads/);
+  assert.match(stdout, /createStore, memoAsync/);
+  // fresh scaffold matches the engine version — no drift note expected
+  assert.doesNotMatch(stdout, /note\s+scaffolded by/);
+});
+
+test('check reports scaffold/engine version drift without failing', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-drift-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  const markerPath = join(dir, 'app', '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.version = '0.0.1';
+  await writeFile(markerPath, JSON.stringify(marker));
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /scaffolded by v0\.0\.1, engine v/);
+  const json = JSON.parse((await i2p(['check', '--json'], { cwd: join(dir, 'app') })).stdout);
+  assert.equal(json.scaffoldVersion, '0.0.1');
+});
+
 test('map lists code files with LOC and exports', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-map-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -143,5 +171,8 @@ test('npm bin shim runs the engine', async () => {
 
 test('list shows templates and features', async () => {
   const { stdout } = await i2p(['list'], { cwd: HERE });
-  assert.match(stdout, /templates: api, cli, web/);
+  assert.match(stdout, /templates: /);
+  for (const name of ['api', 'cli', 'library', 'web', 'worker']) {
+    assert.match(stdout, new RegExp(`\\b${name}\\b`));
+  }
 });
