@@ -1,0 +1,100 @@
+// Engine self-tests: exercise every idea2prototype command end-to-end.
+// These are also the CI workhorse — `node --test "tests/*.test.mjs"`.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const run = promisify(execFile);
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+const SCRIPT = fileURLToPath(new URL('../skills/idea2prototype/scripts/idea2prototype.mjs', import.meta.url));
+const i2p = (args, opts = {}) => run(process.execPath, [SCRIPT, ...args], { timeout: 180_000, ...opts });
+
+test('scaffolds the web template and passes check', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-web-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web', '--name', 'My App', '--idea', 'todo list'], { cwd: dir });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /boot\s+PASS/);
+});
+
+test('add api-crud keeps the web project green', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-crud-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  await i2p(['add', 'api-crud', '--resource', 'todos'], { cwd: join(dir, 'app') });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /5 tests passed/);
+});
+
+test('scaffolds the api template and passes check', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-api-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'svc', '--template', 'api'], { cwd: dir });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'svc') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+});
+
+test('scaffolds the cli template and passes check', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-cli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'tool', '--template', 'cli'], { cwd: dir });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'tool') });
+  assert.match(stdout, /PASS \(2\/3 passed\)/);
+  assert.match(stdout, /no server\.mjs/);
+});
+
+test('verify judges a foreign (non-scaffolded) project from another cwd', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-foreign-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(join(dir, 'math.mjs'), 'export function add(a, b) { return a + b }\n');
+  await writeFile(
+    join(dir, 'tests', 'math.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../math.mjs';\ntest('add', () => assert.equal(add(2, 3), 5));\n",
+  );
+  await assert.rejects(
+    i2p(['verify', 'definitely-missing-dir'], { cwd: tmpdir() }),
+    (err) => /no such directory/.test(err.stderr ?? ''),
+  );
+  const res = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(res.stdout, /PASS/);
+  assert.match(res.stdout, /1 tests? passed/);
+});
+
+test('check fails cleanly on a syntax error', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-broken-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  await writeFile(join(dir, 'app', 'broken.mjs'), 'syntax error here({\n');
+  await assert.rejects(
+    i2p(['check'], { cwd: join(dir, 'app') }),
+    (err) => {
+      assert.match(err.stdout, /FAIL/);
+      assert.match(err.stdout, /syntax\s+FAIL/);
+      return true;
+    },
+  );
+});
+
+test('new refuses to overwrite a non-empty directory', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-refuse-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'app'));
+  await writeFile(join(dir, 'app', 'keep.txt'), 'precious');
+  await assert.rejects(
+    i2p(['new', 'app', '--template', 'web'], { cwd: dir }),
+    (err) => /never overwrites/.test(err.stderr),
+  );
+});
+
+test('list shows templates and features', async () => {
+  const { stdout } = await i2p(['list'], { cwd: HERE });
+  assert.match(stdout, /templates: api, cli, web/);
+});

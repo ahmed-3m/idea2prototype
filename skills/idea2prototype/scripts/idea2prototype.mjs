@@ -180,12 +180,15 @@ async function stepTests(projectDir, syntaxPassed) {
   }
   if (!testFiles.length) return { name: 'tests', status: 'skip', detail: 'no *.test.mjs files' };
 
+  // Strip NODE_TEST_CONTEXT so a `check` spawned from inside a test runner
+  // doesn't put the child `node --test` into child-reporter mode (no TAP summary).
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
   const res = spawnSync(
     process.execPath,
     ['--test', '--test-reporter=tap', '--test-timeout=15000', 'tests/*.test.mjs'],
-    { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024 },
+    { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env },
   );
-  const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
+  const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
   const counts = {};
   for (const m of out.matchAll(/^# (tests|pass|fail|skipped|cancelled) (\d+)$/gm)) counts[m[1]] = Number(m[2]);
 
