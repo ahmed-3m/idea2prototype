@@ -22,7 +22,7 @@ Guidance for coding agents working on THIS repository.
 
 - Normalize `\r\n` before parsing TAP from spawned `node --test`.
 - Strip `NODE_TEST_CONTEXT` from the env when spawning `node --test` from inside a test runner.
-- Use `process.execPath`, never `"node"`. Use globs (`tests/*.test.mjs`), not bare dirs.
+- Use `process.execPath`, never `"node"`. Pass explicit test file paths to `node --test` — glob arguments need Node >= 21.
 
 ## Conventions
 
