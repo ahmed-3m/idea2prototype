@@ -1,6 +1,10 @@
 # Idea2Prototype
 
-**Token-lean prototype forge for coding agents.** Zero-dependency scaffolds, one-command verified checks, and the workflow skill that ties them together. Ships as a [ZCode](https://z.ai) plugin, but the engine is a single Node script any agent (Claude Code, Cline, OpenHands, Cursor, a shell) can drive.
+[![CI](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node >= 18.17](https://img.shields.io/badge/node-%3E%3D18.17-green.svg)](#)
+
+**Turn ideas into tested prototypes — token-lean, for any coding agent.** Zero-dependency scaffolds, feature modules with tests baked in, one-command verification, and a repo map for surgical context. Ships as an npm CLI (`i2p`) and a [ZCode](https://z.ai) plugin; works with any agent that can run a shell (Claude Code, Cline, OpenHands, Cursor, …).
 
 ```
 $ npm run check
@@ -15,71 +19,77 @@ That verdict is the whole idea: an agent building a prototype should **never gen
 
 ## Why
 
-Watch any coding agent build "a small app" from scratch and you'll see the same two token sinks:
+Watch any coding agent build "a small app" from scratch and you'll see the same token sinks:
 
-1. **Boilerplate emission.** The model happily writes 15–40 files of config, server plumbing, and test harness — 10–30k output tokens for code a template already contains.
-2. **Log ingestion.** Every build/test iteration dumps 5–20k tokens of raw output into context, and the model reads it all to find the one failing assertion.
+1. **Boilerplate emission.** The model writes 15–40 files of config, server plumbing, and test harness — 10–30k output tokens for code a template already contains.
+2. **Log ingestion.** Every build/test iteration dumps 5–20k tokens of raw output into context to find the one failing assertion.
+3. **Context sprawl.** The agent opens file after file to learn the codebase.
 
-Idea2Prototype moves both to deterministic code: `new` scaffolds a running, tested project for ~0 tokens, and `check` distills syntax + tests + a live boot probe into ~60 tokens. The bundled skill teaches the agent when to use each and how to keep the loop tight.
+Idea2Prototype moves all three to deterministic code: `new` scaffolds a running, tested project for ~0 tokens, `check` distills syntax + tests + a live boot probe into ~60 tokens, and `map` gives a LOC-and-exports overview instead of file dumps.
 
-| Cost per prototype iteration | Without Idea2Prototype | With Idea2Prototype |
+| Cost per prototype | Without | With |
 |---|---|---|
 | Scaffold (~15 files) | ~10–30k output tokens | ~0 (deterministic copy) |
 | Feedback per edit | raw logs, 5–20k tokens | verdict, ~60 tokens |
-| "Does it actually boot?" | agent guesses / reads more logs | boot probe, 1 line |
+| "Does it actually boot?" | agent guesses / reads logs | boot probe, 1 line |
+| Learning the codebase | open everything | `map` (~15 lines) |
 
-## What's inside
+## Commands
 
-- **Templates** (`web`, `api`, `cli`) — zero runtime dependencies, Node >= 18.17 only:
-  - `web`: static frontend + health endpoint + auto-loading `routes/` + tests (built-in `node:test`)
-  - `api`: JSON API with a route-manifest index + tests
-  - `cli`: arg-parsed command with `--help`/`version` + spawn-based tests
-- **Features**: `add api-crud --resource todos` generates a JSON-file CRUD resource (GET/POST list, GET/PUT/DELETE by id) **with its own roundtrip tests**, auto-wired into the server's route loader.
-- **`check`**: `node --check` on every runnable file → `node --test` → boots the server on an ephemeral port and probes `/api/health`. Compact verdict, non-zero exit on failure, `--json` for tooling.
-- **`verify [dir]`**: the same verdict on ANY Node project, no scaffold marker required — a symmetric judge for benchmarking agents with vs. without this harness (`benchmarks/specs.md`).
-- **Skill + commands**: the `idea2prototype` skill and `/proto-new`, `/proto-check` commands encode the workflow (spec → scaffold → implement → check → done) and the token-discipline rules.
+| Command | What it does |
+|---|---|
+| `i2p new <dir> --template web\|api\|cli` | scaffold a running, tested project (zero deps) |
+| `i2p add api-crud --resource todos` | JSON-file CRUD resource + roundtrip tests |
+| `i2p add auth-local` | accounts: register/login/logout/me — scrypt + HMAC-signed cookies + `requireAuth` |
+| `i2p add upload` | multipart file uploads + fetch-back endpoint + tests |
+| `i2p check [--json]` | syntax + tests + boot, compact verdict (also `npm run check`) |
+| `i2p verify [dir] [--json]` | same verdict on ANY Node project — judge mode |
+| `i2p map [dir]` | repo map: paths + LOC + exports |
+
+Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON API + route manifest), `cli` (arg-parsed tool). All Node >= 18.17, built-in `node:test`, zero installs — ever.
 
 ## Quickstart
 
-**As a ZCode plugin** (skills + commands wired in):
-
-1. Add this repo's root as a plugin marketplace in ZCode, install `idea2prototype`.
-2. Then either pick the skill in the composer, or: `/proto-new a recipe box with search` — you get a scaffolded, spec'd, verified prototype.
-
-**With any other agent** (or plain shell, Node >= 18.17):
+**Any agent or plain shell:**
 
 ```bash
-node skills/idea2prototype/scripts/idea2prototype.mjs new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start        # http://127.0.0.1:3000
-npm run check                 # the verdict above
-node ../skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes
-npm run check                 # still PASS, now with CRUD tests
+npx idea2prototype new my-app --template web --name "My App" --idea "recipe box"
+cd my-app && npm start          # http://127.0.0.1:3000
+npm run check                   # the verdict above
+npx idea2prototype add api-crud --resource recipes
+npx idea2prototype add auth-local
+npm run check                   # still PASS — now with CRUD + auth tests
 ```
 
-Point your agent at this README and it has everything it needs — that's the point.
+**ZCode plugin:** add this repo's marketplace, install `idea2prototype`, then pick the skill in the composer or use `/proto-new a recipe box with search`.
 
-## Design rules
+**Make any agent use it:** copy [`agents/AGENTS.md`](agents/AGENTS.md) (or `agents/CLAUDE.md`) into your project — it teaches the agent the commands and the token-discipline workflow. Point your agent at this README and it has everything it needs.
 
-1. **Deterministic outside the model, instructions inside.** Anything a template can own, the template owns. The LLM spends tokens only on the actual product logic.
-2. **Zero dependencies, forever.** Templates run on bare Node. No install step between "scaffolded" and "verified".
-3. **Verdicts, not logs.** `check` is the only feedback loop; it caps failure output at 3 notes so context stays clean even when things break.
-4. **No destructive operations.** `new` refuses non-empty directories; nothing deletes user files.
-5. **Portable core.** The engine is one `.mjs` file; plugin/skill wrappers are sugar.
+## How it compares
+
+| | Idea2Prototype | bolt.diy / dyad | OpenHands / Cline |
+|---|---|---|---|
+| Runs anywhere (any agent, any OS) | ✅ one Node file | browser/app | IDE/agent-specific |
+| Zero dependencies | ✅ | ❌ | ❌ |
+| Tests included by default | ✅ scaffold + every feature | varies | varies |
+| Feedback for agents | ~60-token verdict | UI-first | logs |
+| Works offline / air-gapped | ✅ | ❌ | ✅ |
 
 ## Benchmarks
 
-`benchmarks/specs.md` contains 10 fixed prototype specs and the measurement protocol (input/output tokens, wall-clock, tests passing — with vs. without the harness). Results are welcome as PRs; the table in that file is the source of truth.
+`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included.
 
-## Roadmap
+## Design rules
 
-- More templates (`worker`, `discord-bot`, `chrome-extension`)
-- More features (`add auth-local`, `add file-upload`, `add realtime-ws`)
-- `proto map` — aider-style repo map for surgical context loading
-- `bench` — one-command with/without harness comparison from session transcripts
+1. **Deterministic outside the model, instructions inside.** Anything a template can own, the template owns.
+2. **Zero dependencies, forever.** No install step between "scaffolded" and "verified".
+3. **Verdicts, not logs.** Failure output is capped at 3 notes so context stays clean.
+4. **No destructive operations.** `new` refuses non-empty directories.
+5. **Portable core.** One `.mjs` engine; plugin/skill/npm wrappers are sugar.
 
 ## Contributing
 
-PRs for new templates/features are welcome: a template is a directory under `skills/idea2prototype/templates/`, a feature is a pair of `.tmpl.mjs` files plus a small registration in `scripts/idea2prototype.mjs`. Every template must pass `check` on a clean scaffold — that's the bar.
+New templates and features are exactly two template files + one registry entry — see [CONTRIBUTING.md](CONTRIBUTING.md). The engine suite (`node --test "tests/*.test.mjs"`) runs on ubuntu/windows across Node 18/22/24 in CI and must stay green. `AGENTS.md` documents the architecture for humans and coding agents alike.
 
 ## License
 

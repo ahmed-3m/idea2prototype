@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');

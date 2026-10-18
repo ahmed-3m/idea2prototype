@@ -19,15 +19,19 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 
 - `new <dir> --template web|api|cli --name "..." --idea "..."` — scaffold a project
 - `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api)
+- `add auth-local` — register/login/logout/me accounts: scrypt hashes, HMAC-signed cookies, `requireAuth` helper (web/api)
+- `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)
 - `check` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects
+- `verify [dir]` — same verdict on ANY Node project (judge mode)
+- `map [dir]` — compact repo map (paths + LOC + exports); run it before opening files
 - `list` — show available templates/features
 
 ## Workflow (follow in order)
 
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
 2. **Never hand-write scaffold files.** `server.mjs`, `tests/`, `package.json`, `.idea2prototype.json` belong to the tool. Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests.
-3. **Add capabilities with `add`, not from scratch.** Need persistence? `add api-crud --resource todos` generates routes + tests. The server auto-loads `routes/*.mjs`; handlers return `[status, payload]`.
-4. **Tight loop: edit → `check` → fix.** Run `npm run check` (or the script's `check`) after every meaningful change. Read the verdict only — never run tests directly and never read raw logs.
+3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`. The server auto-loads `routes/*.mjs`; handlers return `[status, payload]`.
+4. **Tight loop: edit → `check` → fix.** Run `npm run check` (or the script's `check`) after every meaningful change. Read the verdict only — never run tests directly and never read raw logs. Need context? `map` first, then open only the files you're changing.
 5. **Done = check PASS + spec flows implemented.** Report the verdict lines and the spec checklist, then stop.
 
 ## Token discipline (why this exists)
