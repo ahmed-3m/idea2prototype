@@ -1,0 +1,41 @@
+{
+  "name": "idea2prototype",
+  "version": "0.2.0",
+  "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
+  "type": "module",
+  "license": "MIT",
+  "author": "ahmed-3m",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahmed-3m/idea2prototype.git"
+  },
+  "homepage": "https://github.com/ahmed-3m/idea2prototype#readme",
+  "bugs": {
+    "url": "https://github.com/ahmed-3m/idea2prototype/issues"
+  },
+  "bin": {
+    "i2p": "bin/i2p.mjs"
+  },
+  "files": [
+    "bin/",
+    "skills/idea2prototype/SKILL.md",
+    "skills/idea2prototype/scripts/",
+    "skills/idea2prototype/templates/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "ai-agents",
+    "coding-agent",
+    "prototyping",
+    "scaffold",
+    "testing",
+    "cli",
+    "vibe-coding",
+    "zcode-plugin"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  }
+}

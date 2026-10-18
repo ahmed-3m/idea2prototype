@@ -125,6 +125,12 @@ test('map lists code files with LOC and exports', async (t) => {
   assert.match(stdout, /routes\/todos\.mjs.*→.*default/);
 });
 
+test('npm bin shim runs the engine', async () => {
+  const bin = fileURLToPath(new URL('../bin/i2p.mjs', import.meta.url));
+  const { stdout } = await run(process.execPath, [bin, 'version'], { timeout: 30_000 });
+  assert.match(stdout, /\d+\.\d+\.\d+/);
+});
+
 test('list shows templates and features', async () => {
   const { stdout } = await i2p(['list'], { cwd: HERE });
   assert.match(stdout, /templates: api, cli, web/);
