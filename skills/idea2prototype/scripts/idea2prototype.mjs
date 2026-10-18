@@ -96,6 +96,18 @@ const FEATURES = {
       'protect routes: import { requireAuth } from "./auth.mjs"',
     ],
   },
+  upload: {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/uploads.mjs': 'route.tmpl.mjs',
+      'tests/uploads.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/uploads.mjs   POST /api/uploads (multipart) + GET /api/uploads/:name',
+      'tests/uploads.test.mjs  upload roundtrip + validation/traversal cases',
+      'files stored in uploads/ (5MB cap); zero-dependency multipart parser',
+    ],
+  },
 };
 
 async function cmdAdd(rest) {
@@ -288,7 +300,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype list                             available templates and features`);

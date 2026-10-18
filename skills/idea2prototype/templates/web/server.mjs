@@ -49,7 +49,7 @@ function matchRoute(route, url) {
   return params;
 }
 
-function readBody(req, limit = 1e6) {
+function readRawBody(req, limit = 10e6) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -62,14 +62,7 @@ function readBody(req, limit = 1e6) {
         chunks.push(chunk);
       }
     });
-    req.on('end', () => {
-      if (!chunks.length) return resolve(undefined);
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(new Error('invalid JSON body'));
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -78,6 +71,10 @@ function sendJson(res, status, payload, headers = {}) {
   if (status === 204 || status === 304) {
     res.writeHead(status, headers);
     return res.end();
+  }
+  if (Buffer.isBuffer(payload)) {
+    res.writeHead(status, { 'content-length': payload.length, ...headers });
+    return res.end(payload);
   }
   const data = JSON.stringify(payload);
   res.writeHead(status, {
@@ -104,10 +101,20 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
         if (!handler) return sendJson(res, 405, { error: 'method not allowed' });
         const ctx = { url, params, req, res };
         if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+          let raw;
           try {
-            ctx.body = await readBody(req);
+            raw = await readRawBody(req);
           } catch (err) {
             return sendJson(res, 400, { error: err.message });
+          }
+          if ((req.headers['content-type'] ?? '').includes('multipart/form-data')) {
+            ctx.rawBody = raw;
+          } else if (raw.length) {
+            try {
+              ctx.body = JSON.parse(raw.toString('utf8'));
+            } catch {
+              return sendJson(res, 400, { error: 'invalid JSON body' });
+            }
           }
         }
         const [status, payload, headers] = await handler(ctx);
