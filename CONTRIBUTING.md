@@ -19,7 +19,7 @@ PRs welcome — especially new templates and features. The bar is simple: **the 
 ## Before opening a PR
 
 ```bash
-node --test "tests/*.test.mjs"   # full e2e suite, all green
+node --test tests/engine.test.mjs   # full e2e suite, all green
 node --check skills/idea2prototype/scripts/idea2prototype.mjs
 ```
 

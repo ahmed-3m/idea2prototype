@@ -224,12 +224,11 @@ async function stepTests(projectDir, syntaxPassed) {
   }
   if (!testFiles.length) return { name: 'tests', status: 'skip', detail: 'no *.test.mjs files' };
 
-  // Strip NODE_TEST_CONTEXT so a `check` spawned from inside a test runner
-  // doesn't put the child `node --test` into child-reporter mode (no TAP summary).
+  // Pass explicit file paths: glob args to `node --test` are Node >= 21 only.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
   const res = spawnSync(
     process.execPath,
-    ['--test', '--test-reporter=tap', '--test-timeout=15000', 'tests/*.test.mjs'],
+    ['--test', '--test-reporter=tap', '--test-timeout=15000', ...testFiles.map((f) => join('tests', f))],
     { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env },
   );
   const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');

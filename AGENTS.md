@@ -13,7 +13,7 @@ Guidance for coding agents working on THIS repository.
 ## Hard rules
 
 1. **Zero dependencies, forever.** Node >= 18.17 built-ins only. No npm installs anywhere.
-2. **Every template must pass check on a clean scaffold** — the engine suite enforces this; run it before claiming done: `node --test "tests/*.test.mjs"`.
+2. **Every template must pass check on a clean scaffold** — the engine suite enforces this; run it before claiming done: `node --test tests/engine.test.mjs`.
 3. **No destructive operations.** `new` refuses non-empty dirs; nothing deletes user files.
 4. Templates are exemplars: agents read them to learn the route contract. Keep them clean and commented.
 5. Route contract: `routes/*.mjs` default-export route objects `{ path, methods }`; handlers get `ctx = { url, params, req, res, body, rawBody }` and return `[status, payload, headers?]`; Buffer payloads send raw.

@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Engine self-tests (scaffold → add → check → verify)
-        run: node --test "tests/*.test.mjs"
+        run: node --test tests/engine.test.mjs
