@@ -1,0 +1,8 @@
+{
+  "name": "idea2prototype",
+  "version": "0.1.0",
+  "description": "Idea2Prototype — turn ideas into tested prototypes: zero-dependency scaffolds, one-command verified checks, and the workflow skill that ties them together.",
+  "author": { "name": "ahmed-3m" },
+  "skills": "./skills",
+  "commands": "./commands"
+}

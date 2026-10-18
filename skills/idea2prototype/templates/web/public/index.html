@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{name}}</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h1>{{name}}</h1>
+    <p id="status">checking server…</p>
+    <ul id="list"></ul>
+    <form id="add-form">
+      <input id="add-input" placeholder="Add an item" autocomplete="off" />
+      <button type="submit">Add</button>
+    </form>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
