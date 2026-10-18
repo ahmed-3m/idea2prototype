@@ -114,6 +114,16 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
   );
 });
 
+test('scaffolds the worker template and passes check', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-worker-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'jobs', '--template', 'worker'], { cwd: dir });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'jobs') });
+  assert.match(stdout, /PASS \(2\/3 passed\)/);
+  assert.match(stdout, /3 tests passed/);
+  assert.match(stdout, /no server\.mjs/);
+});
+
 test('map lists code files with LOC and exports', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-map-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

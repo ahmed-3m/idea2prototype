@@ -17,7 +17,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 
 `<skill-base>` is this skill's own directory (shown at the top of this skill when loaded). Commands:
 
-- `new <dir> --template web|api|cli --name "..." --idea "..."` — scaffold a project
+- `new <dir> --template web|api|cli|worker --name "..." --idea "..."` — scaffold a project
 - `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api)
 - `add auth-local` — register/login/logout/me accounts: scrypt hashes, HMAC-signed cookies, `requireAuth` helper (web/api)
 - `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)

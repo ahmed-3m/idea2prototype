@@ -38,7 +38,7 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 
 | Command | What it does |
 |---|---|
-| `i2p new <dir> --template web\|api\|cli` | scaffold a running, tested project (zero deps) |
+| `i2p new <dir> --template web\|api\|cli\|worker` | scaffold a running, tested project (zero deps) |
 | `i2p add api-crud --resource todos` | JSON-file CRUD resource + roundtrip tests |
 | `i2p add auth-local` | accounts: register/login/logout/me — scrypt + HMAC-signed cookies + `requireAuth` |
 | `i2p add upload` | multipart file uploads + fetch-back endpoint + tests |
@@ -46,7 +46,7 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 | `i2p verify [dir] [--json]` | same verdict on ANY Node project — judge mode |
 | `i2p map [dir]` | repo map: paths + LOC + exports |
 
-Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON API + route manifest), `cli` (arg-parsed tool). All Node >= 18.17, built-in `node:test`, zero installs — ever.
+Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON API + route manifest), `cli` (arg-parsed tool), `worker` (persistent job queue with retries). All Node >= 18.17, built-in `node:test`, zero installs — ever.
 
 ## Quickstart
 

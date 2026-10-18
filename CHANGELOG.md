@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- Template: `worker` — persistent job queue (JSON-file store, retry with maxAttempts, custom handlers via `registerHandler`) with restart-persistence tests.
+- First archived benchmark run (treatment arm, spec 1): `benchmarks/runs/2026-10-19-spec1-treatment/` — 71s scaffold→PASS, 2 of 8 files hand-written.
+
 ## 0.2.0
 
 - Features: `add auth-local` (scrypt + HMAC-signed cookie sessions, `requireAuth` helper), `add upload` (zero-dep multipart parser, 5MB cap, traversal guards).
