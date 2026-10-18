@@ -4,7 +4,7 @@
 //
 // Commands:
 //   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
-//   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload
+//   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
 //   idea2prototype check [--json]    syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');
@@ -115,6 +115,18 @@ const FEATURES = {
       'routes/uploads.mjs   POST /api/uploads (multipart) + GET /api/uploads/:name',
       'tests/uploads.test.mjs  upload roundtrip + validation/traversal cases',
       'files stored in uploads/ (5MB cap); zero-dependency multipart parser',
+    ],
+  },
+  'rate-limit': {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/ratelimit.mjs': 'route.tmpl.mjs',
+      'tests/ratelimit.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/ratelimit.mjs   rateLimit({ max, windowMs, keyFn }) wrapper + GET /api/ping demo',
+      'tests/ratelimit.test.mjs  429 + Retry-After + header + key-isolation cases',
+      'wrap handlers: methods: { GET: rateLimit({ max: 10 })(handler) }',
     ],
   },
 };
@@ -400,7 +412,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);

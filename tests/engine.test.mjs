@@ -53,6 +53,16 @@ test('add upload keeps the web project green', async (t) => {
   assert.match(stdout, /5 tests passed/); // 3 web + 2 upload
 });
 
+test('add rate-limit keeps the web project green', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-rl-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
+  await i2p(['add', 'rate-limit'], { cwd: join(dir, 'app') });
+  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /5 tests passed/); // 3 web + 2 rate-limit
+});
+
 test('scaffolds the api template and passes check', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-api-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- Feature: `add rate-limit` — per-key fixed-window limiter (`rateLimit({ max, windowMs, keyFn })` handler wrapper) with 429 + `Retry-After` + `X-RateLimit-*` headers, lazy bucket cleanup (no timers), and a live `GET /api/ping` demo route.
+- `agents/AGENTS.md` + `agents/CLAUDE.md` snippets now list all five templates and all four features (they had drifted to `web|api|cli`).
+
 ## 0.4.0
 
 - Template: `library` — importable zero-dep module (`createStore` observable state container, `memoAsync` with in-flight dedupe) plus tests; for library/util prototypes instead of apps.
