@@ -39,6 +39,6 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ## Notes
 
 - Tests use the built-in `node:test`; no installs, no dependencies ever added by the tool.
-- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. `check --json` gives the same verdict machine-readable.
+- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
 - If the user asks for dependencies (a framework, a database), ask once, then add via `npm install` and extend the tests accordingly.
 - Projects are plain Node — `npm start` (web/api) or `node cli.mjs help` (cli); no other tooling assumed.

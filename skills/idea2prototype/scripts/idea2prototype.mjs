@@ -109,19 +109,32 @@ async function cmdAdd(rest) {
 }
 
 // ---------------------------------------------------------------------------
-// check — the compact verdict
+// check / verify — the compact verdict
 // ---------------------------------------------------------------------------
 async function cmdCheck(rest) {
   const opts = parseFlags(rest, []);
-  const asJson = 'json' in opts;
   await loadMarker(); // must run inside a idea2prototype project
+  return runChecks(process.cwd(), 'json' in opts);
+}
 
+// verify: run the same verdict on ANY Node project — used to judge projects
+// this tool never scaffolded (benchmark control arm, external code).
+async function cmdVerify(rest) {
+  const dir = rest.find((a) => !a.startsWith('--'));
+  const target = resolve(process.cwd(), dir ?? '.');
+  if (!existsSync(target) || !statSync(target).isDirectory()) {
+    die(`no such directory: ${target}`);
+  }
+  return runChecks(target, rest.includes('--json'));
+}
+
+async function runChecks(projectDir, asJson) {
   const steps = [];
-  const syntax = await stepSyntax();
+  const syntax = await stepSyntax(projectDir);
   steps.push(syntax);
-  const tests = await stepTests(syntax.status === 'pass');
+  const tests = await stepTests(projectDir, syntax.status === 'pass');
   steps.push(tests);
-  const boot = await stepBoot(tests.status === 'pass');
+  const boot = await stepBoot(projectDir, tests.status === 'pass');
   steps.push(boot);
 
   const failed = steps.filter((s) => s.status === 'fail');
@@ -129,10 +142,10 @@ async function cmdCheck(rest) {
   const passedCount = steps.filter((s) => s.status === 'pass').length;
 
   if (asJson) {
-    SAY(JSON.stringify({ tool: 'idea2prototype', version: VERSION, status: summary, steps }, null, 2));
+    SAY(JSON.stringify({ tool: 'idea2prototype', version: VERSION, project: projectDir, status: summary, steps }, null, 2));
   } else {
     SAY(``);
-    SAY(`Idea2Prototype check — ${summary} (${passedCount}/${steps.length} passed)`);
+    SAY(`Idea2Prototype check — ${summary} (${passedCount}/${steps.length} passed)  [${projectDir}]`);
     for (const s of steps) {
       const icon = s.status === 'pass' ? 'PASS ' : s.status === 'fail' ? 'FAIL ' : 'SKIP ';
       SAY(`  ${s.name.padEnd(7)} ${icon} ${s.detail}`);
@@ -142,8 +155,8 @@ async function cmdCheck(rest) {
   process.exitCode = failed.length ? 1 : 0;
 }
 
-async function stepSyntax() {
-  const files = await collectNodeFiles(process.cwd());
+async function stepSyntax(projectDir) {
+  const files = await collectNodeFiles(projectDir);
   const failures = [];
   for (const file of files) {
     const res = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
@@ -156,8 +169,8 @@ async function stepSyntax() {
     : { name: 'syntax', status: 'pass', detail: `${files.length} files parse clean` };
 }
 
-async function stepTests(syntaxPassed) {
-  const testDir = join(process.cwd(), 'tests');
+async function stepTests(projectDir, syntaxPassed) {
+  const testDir = join(projectDir, 'tests');
   if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
   let testFiles = [];
   try {
@@ -170,7 +183,7 @@ async function stepTests(syntaxPassed) {
   const res = spawnSync(
     process.execPath,
     ['--test', '--test-reporter=tap', '--test-timeout=15000', 'tests/*.test.mjs'],
-    { encoding: 'utf8', timeout: 90_000, cwd: process.cwd(), maxBuffer: 16 * 1024 * 1024 },
+    { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024 },
   );
   const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
   const counts = {};
@@ -193,10 +206,10 @@ async function stepTests(syntaxPassed) {
   };
 }
 
-async function stepBoot(testsPassed) {
-  const serverPath = join(process.cwd(), 'server.mjs');
+async function stepBoot(projectDir, testsPassed) {
+  const serverPath = join(projectDir, 'server.mjs');
   if (!testsPassed) return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
-  if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs (cli template)' };
+  if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
   try {
@@ -242,6 +255,7 @@ function help() {
   SAY(`  idea2prototype new <dir> [--template web|api|cli] [--name "..."] [--idea "..."]`);
   SAY(`  idea2prototype add api-crud --resource <name>   add a JSON-file CRUD resource + tests`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
+  SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype list                             available templates and features`);
 }
 
@@ -333,6 +347,7 @@ try {
     case 'new': await cmdNew(rest); break;
     case 'add': await cmdAdd(rest); break;
     case 'check': await cmdCheck(rest); break;
+    case 'verify': await cmdVerify(rest); break;
     case 'list': await cmdList(); break;
     case 'version': case '--version': case '-v': SAY(VERSION); break;
     case 'help': case undefined: case '--help': case '-h': help(); break;

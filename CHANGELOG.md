@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- `verify [dir] [--json]`: the check verdict on ANY Node project (no marker required) — symmetric judge mode for benchmarking with/without the harness.
+- Rigorous pre-registered benchmark protocol: paired 2-arm design, blind functional judge rubrics, stop rules, hypotheses (benchmarks/specs.md).
+
 ## 0.1.0
 
 Initial release.

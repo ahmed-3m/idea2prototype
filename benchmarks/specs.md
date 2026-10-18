@@ -1,13 +1,37 @@
-# Idea2Prototype benchmark — 10 fixed prototype specs
+# Idea2Prototype benchmark — with vs. without harness
 
-Measure what Idea2Prototype actually saves. Same agent, same model, same machine; two arms:
+This file is the pre-registered protocol. Write judge rubrics **before** running, never show them to the build agents, and report failures as honestly as wins.
 
-- **Control**: agent builds the spec from scratch with no harness.
-- **Idea2Prototype**: agent has the skill + commands (this repo).
+## Research questions
 
-## Specs
+- **RQ1 (tokens):** does the harness reduce input/output tokens per completed prototype?
+- **RQ2 (time):** does it reduce wall-clock?
+- **RQ3 (reliability):** does the final artifact actually run and pass tests more often?
+- **RQ4 (function):** does it meet the spec's core flows at least as well?
 
-Each spec must end with a runnable project whose `check` (or equivalent test suite) passes. Scope is deliberately "prototype-sized" — 1–3 core flows.
+## Design
+
+**Paired, within-subject:** every spec runs in both arms. 2 arms × 10 specs × 3 repetitions = 60 runs (pilot first: 3 specs × 2 reps × 2 arms = 12 runs).
+
+| Arm | Setup |
+|---|---|
+| **Control** | Same agent + model, no skill/commands installed. Full freedom (npm, scaffolds like `create-vite`, anything). Task prompt explicitly requires tests — we measure the harness, not "tests vs no tests". |
+| **Treatment** | Same agent + model + task prompt, with the `idea2prototype` skill selected in the composer (per plugin trial protocol). |
+
+**Controls against confounds**
+
+1. Same model version and settings both arms; record model id + date per run (pair runs closely in time; alternate arms to neutralize provider-side drift).
+2. Fresh session per run. No memory, no prior context.
+3. Identical neutral task prompt in both arms (template below). No mention of benchmarking.
+4. Zero human intervention. If the agent asks anything, reply exactly: "use your best judgment".
+5. Machine idle; no parallel runs while timing.
+6. Randomize arm order within each spec × rep pair.
+
+**Task prompt template (both arms, identical):**
+
+> Build a working prototype: <spec text>. Requirements: runnable with Node.js, include automated tests, finish only when it works end to end. When finished reply with DONE and instructions to run it.
+
+## The 10 specs
 
 | # | Spec |
 |---|---|
@@ -22,18 +46,49 @@ Each spec must end with a runnable project whose `check` (or equivalent test sui
 | 9 | Habit tracker web app: 7-day grid per habit, toggle cells, persisted |
 | 10 | Word counter CLI: `count <file>` → words, lines, top-5 words |
 
-## Protocol
+## Judging (after the agent says DONE)
 
-1. Fresh session per run (no shared context). Same system prompt except for the Idea2Prototype arm, which includes the skill.
-2. Record: **input tokens**, **output tokens**, **wall-clock**, **final check status** (PASS/FAIL/partial).
-3. No human intervention mid-run; if the agent asks a question, answer with "use your best judgment".
-4. Run each spec once per arm (3 runs if you want variance; report median).
-5. Control arm must still write tests — "tested" is part of the spec, not the harness.
+Two independent layers, applied **identically to both arms**:
+
+1. **Objective verifier** (symmetric by construction):
+   `node skills/idea2prototype/scripts/idea2prototype.mjs verify <project-dir> --json`
+   — syntax + tests + boot probe on any Node project, no marker required. Record status and step details.
+2. **Functional judge** — a separate cheap session (not the builder) with a per-spec binary rubric written before the experiment. The judge starts the app exactly per the project's own README/instructions and checks each criterion. Rubric example for spec 1:
+   - [ ] app starts using the project's documented command
+   - [ ] can add an item via the UI or API
+   - [ ] can complete/check an item
+   - [ ] can delete an item
+   - [ ] items still present after app restart (persistence)
+   Score = criteria passed / total. Judges never see which arm produced the project (blind: rename dirs to `run-<hash>` first).
+
+## Metrics per run
+
+| Metric | Source |
+|---|---|
+| input tokens, output tokens | session transcript usage fields |
+| wall-clock (session start → DONE) | timestamps |
+| agent turns / tool calls | transcript |
+| verifier verdict + step details | `verify --json` |
+| functional score (0–1) | judge rubric |
+| dependencies installed (count) | `package.json` diff |
+
+## Analysis
+
+- Per spec: paired deltas (treatment − control) for each metric; report medians and IQR across reps.
+- Aggregate: median % change per metric; per-spec scatter (some specs may favor control — show them).
+- Reliability: pass rates with confidence intervals (binomial).
+- Optional: Wilcoxon signed-rank on paired medians. With n=10 specs, treat as descriptive, not proof.
+
+## Stop rules & hygiene
+
+- Abort a run only on environment failure (crash, network); log and redo.
+- Pre-register hypotheses: H1 output tokens ↓ ≥ 40%; H2 wall-clock ↓ 10–30%; H3 verifier/judge pass rate ↑ ≥ 20 points; H4 functional score ≥ control. A failed hypothesis is a **result**, not a bad experiment — publish it and fix the tool.
+- Raw transcripts archived per run: `benchmarks/runs/<date>-<spec>-<arm>-<rep>/`.
 
 ## Results
 
-| Date | Agent + model | Arm | Σ tokens (in/out) | Σ wall-clock | Specs passing |
-|---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| Date | Agent + model | Arm | Σ tokens (in/out) | Σ wall-clock | Verifier pass | Judge score |
+|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | — |
 
 Submit results as PRs editing this table; include raw transcripts when possible.

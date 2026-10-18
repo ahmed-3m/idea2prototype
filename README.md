@@ -36,6 +36,7 @@ Idea2Prototype moves both to deterministic code: `new` scaffolds a running, test
   - `cli`: arg-parsed command with `--help`/`version` + spawn-based tests
 - **Features**: `add api-crud --resource todos` generates a JSON-file CRUD resource (GET/POST list, GET/PUT/DELETE by id) **with its own roundtrip tests**, auto-wired into the server's route loader.
 - **`check`**: `node --check` on every runnable file → `node --test` → boots the server on an ephemeral port and probes `/api/health`. Compact verdict, non-zero exit on failure, `--json` for tooling.
+- **`verify [dir]`**: the same verdict on ANY Node project, no scaffold marker required — a symmetric judge for benchmarking agents with vs. without this harness (`benchmarks/specs.md`).
 - **Skill + commands**: the `idea2prototype` skill and `/proto-new`, `/proto-check` commands encode the workflow (spec → scaffold → implement → check → done) and the token-discipline rules.
 
 ## Quickstart
