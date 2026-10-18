@@ -225,13 +225,25 @@ async function stepTests(projectDir, syntaxPassed) {
   if (!testFiles.length) return { name: 'tests', status: 'skip', detail: 'no *.test.mjs files' };
 
   // Pass explicit file paths: glob args to `node --test` are Node >= 21 only.
+  // Strip NODE_TEST_CONTEXT so a check spawned from inside a test runner
+  // doesn't put the child into child-reporter mode (no TAP summary).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
-  const res = spawnSync(
+  const fileArgs = testFiles.map((f) => join('tests', f));
+  const spawnOpts = { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env };
+  const capture = (res) => `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
+
+  let res = spawnSync(
     process.execPath,
-    ['--test', '--test-reporter=tap', '--test-timeout=15000', ...testFiles.map((f) => join('tests', f))],
-    { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env },
+    ['--test', '--test-reporter=tap', '--test-timeout=15000', ...fileArgs],
+    spawnOpts,
   );
-  const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
+  let out = capture(res);
+  // Node < 20 rejects the newer runner flags as bad options — retry bare
+  // (--test): the default non-TTY reporter there is already TAP.
+  if (/bad option|unknown option|unknown switch/i.test(out)) {
+    res = spawnSync(process.execPath, ['--test', ...fileArgs], spawnOpts);
+    out = capture(res);
+  }
   const counts = {};
   for (const m of out.matchAll(/^# (tests|pass|fail|skipped|cancelled) (\d+)$/gm)) counts[m[1]] = Number(m[2]);
 
