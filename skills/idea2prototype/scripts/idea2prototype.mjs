@@ -136,7 +136,8 @@ async function cmdAdd(rest) {
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
   const available = Object.keys(FEATURES).join(', ');
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
-  const def = FEATURES[feature] ?? ((() => die(`unknown feature "${feature}" — available: ${available}`))());
+  const def = FEATURES[feature];
+  if (!def) die(`unknown feature "${feature}" — available: ${available}`);
 
   const marker = await loadMarker();
   if (!def.appliesTo.includes(marker.template)) {
@@ -299,34 +300,33 @@ async function stepTests(projectDir, syntaxPassed) {
 
 async function stepBoot(projectDir, testsPassed, marker) {
   if (!testsPassed) return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
-
   // Library projects have no server to probe — boot = import the public API.
-  if (marker?.template === 'library') {
-    const started = Date.now();
-    try {
-      const mod = await import(pathToFileURL(join(projectDir, 'index.mjs')).href);
-      const names = Object.keys(mod);
-      if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
-      return {
-        name: 'boot',
-        status: 'pass',
-        detail: `index.mjs loads in ${Date.now() - started}ms — exports: ${names.join(', ')}`,
-      };
-    } catch (err) {
-      return { name: 'boot', status: 'fail', detail: `import failed: ${String(err?.message ?? err)}` };
-    }
-  }
+  if (marker?.template === 'library') return bootLibrary(projectDir);
+  return bootServer(projectDir, marker);
+}
 
+async function bootLibrary(projectDir) {
+  const started = Date.now();
+  try {
+    const mod = await import(pathToFileURL(join(projectDir, 'index.mjs')).href);
+    const names = Object.keys(mod);
+    if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
+    return {
+      name: 'boot',
+      status: 'pass',
+      detail: `index.mjs loads in ${Date.now() - started}ms — exports: ${names.join(', ')}`,
+    };
+  } catch (err) {
+    return { name: 'boot', status: 'fail', detail: `import failed: ${String(err?.message ?? err)}` };
+  }
+}
+
+async function bootServer(projectDir, marker) {
   const serverPath = join(projectDir, 'server.mjs');
   if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
   try {
-    const withTimeout = (promise, ms, label) =>
-      Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
-      ]);
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
@@ -439,6 +439,12 @@ function help() {
 // ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
+const withTimeout = (promise, ms, label) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
+  ]);
+
 function parseFlags(args, valueFlags) {
   const out = { _: [] };
   for (let i = 0; i < args.length; i++) {
@@ -454,25 +460,23 @@ function parseFlags(args, valueFlags) {
   return out;
 }
 
-async function loadMarker() {
-  const markerPath = join(process.cwd(), '.idea2prototype.json');
-  if (!existsSync(markerPath)) {
-    die(`not a idea2prototype project (no .idea2prototype.json in ${process.cwd()}) — run: idea2prototype new <dir>`);
-  }
-  try {
-    return JSON.parse(await readFile(markerPath, 'utf8'));
-  } catch {
-    die('.idea2prototype.json is not valid JSON');
-  }
-}
-
-// Best-effort marker read for an arbitrary directory (verify/check internals).
+// Canonical marker reader: null when absent or unparseable.
 async function readMarker(projectDir) {
   try {
     return JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
   } catch {
     return null;
   }
+}
+
+async function loadMarker() {
+  const markerPath = join(process.cwd(), '.idea2prototype.json');
+  if (!existsSync(markerPath)) {
+    die(`not a idea2prototype project (no .idea2prototype.json in ${process.cwd()}) — run: idea2prototype new <dir>`);
+  }
+  const marker = await readMarker(process.cwd());
+  if (!marker) die('.idea2prototype.json is not valid JSON');
+  return marker;
 }
 
 async function replacePlaceholders(root, mapping) {
