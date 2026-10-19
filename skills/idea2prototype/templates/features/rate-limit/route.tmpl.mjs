@@ -8,9 +8,12 @@ const CLEANUP_INTERVAL_MS = 60_000;
 let lastCleanup = 0;
 
 /**
- * Wrap a route handler with a per-key fixed-window limit.
+ * Wrap a route handler with a per-key fixed-window limiter.
  * Keys default to the client IP; pass `keyFn(ctx)` to key by user/idempotency
- * key instead. Over-limit requests get 429 + Retry-After; allowed ones pass
+ * key instead. Behind a reverse proxy the "client IP" is the proxy's IP — all
+ * users would share one bucket — so key on a forwarded header you trust,
+ * e.g. keyFn: (ctx) => ctx.req.headers['x-forwarded-for'] ?? 'local'.
+ * Over-limit requests get 429 + Retry-After; allowed ones pass
  * through with X-RateLimit-* headers merged into the response.
  */
 export function rateLimit({ max = 60, windowMs = 60_000, keyFn } = {}) {
