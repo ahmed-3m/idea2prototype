@@ -143,6 +143,19 @@ const FEATURES = {
       'demo route: delete GET /api/cors-ping from routes/cors.mjs (and its test) when done',
     ],
   },
+  sse: {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/sse.mjs': 'route.tmpl.mjs',
+      'tests/sse.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/sse.mjs   GET /api/events — Server-Sent Events stream (text/event-stream)',
+      'tests/sse.test.mjs  SSE headers + first-event read + clean abort/close',
+      'stream pattern: write chunks to ctx.res directly and return nothing — the server keeps the stream open',
+      'demo route: delete GET /api/events from routes/sse.mjs (and its test) when done',
+    ],
+  },
 };
 
 async function cmdAdd(rest) {

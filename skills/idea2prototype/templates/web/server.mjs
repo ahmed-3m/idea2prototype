@@ -117,7 +117,12 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
             }
           }
         }
-        const [status, payload, headers] = await handler(ctx);
+        const result = await handler(ctx);
+        // Streaming escape hatch: a handler that wrote chunks directly to
+        // ctx.res (e.g. Server-Sent Events) returns nothing — the stream
+        // stays open past this request; don't try to send a JSON response.
+        if (res.headersSent || res.writableEnded) return;
+        const [status, payload, headers] = result;
         return sendJson(res, status, payload, headers);
       }
       if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, url, res);
