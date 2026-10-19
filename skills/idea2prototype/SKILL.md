@@ -1,6 +1,6 @@
 ---
 name: idea2prototype
-description: Build working prototypes from ideas with minimal tokens — zero-dependency scaffolds, CRUD features, and a compact verified check (syntax + tests + boot). Use when creating an MVP, demo, web app, API, or CLI prototype from an idea, or whenever asked to scaffold/start a new small project or verify one iteratively.
+description: Build working prototypes from ideas with minimal tokens — zero-dependency scaffolds, CRUD features, and a compact verified check (syntax + tests + boot). Use when creating an MVP, demo, web app, API, CLI, or library prototype from an idea, or whenever asked to scaffold/start a new small project or verify one iteratively.
 ---
 
 # Idea2Prototype — token-lean prototype workflow
@@ -17,7 +17,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 
 `<skill-base>` is this skill's own directory (shown at the top of this skill when loaded). Commands:
 
-- `new <dir> --template web|api|cli|worker --name "..." --idea "..."` — scaffold a project
+- `new <dir> --template web|api|cli|worker|library --name "..." --idea "..."` — scaffold a project
 - `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api)
 - `add auth-local` — register/login/logout/me accounts: scrypt hashes, HMAC-signed cookies, `requireAuth` helper (web/api)
 - `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)
@@ -29,7 +29,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ## Workflow (follow in order)
 
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
-2. **Never hand-write scaffold files.** `server.mjs`, `tests/`, `package.json`, `.idea2prototype.json` belong to the tool. Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests.
+2. **Never hand-write scaffold files.** `server.mjs`, `tests/`, `package.json`, `.idea2prototype.json` belong to the tool. Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
 3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`. The server auto-loads `routes/*.mjs`; handlers return `[status, payload]`.
 4. **Tight loop: edit → `check` → fix.** Run `npm run check` (or the script's `check`) after every meaningful change. Read the verdict only — never run tests directly and never read raw logs. Need context? `map` first, then open only the files you're changing.
 5. **Done = check PASS + spec flows implemented.** Report the verdict lines and the spec checklist, then stop.
@@ -43,6 +43,6 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ## Notes
 
 - Tests use the built-in `node:test`; no installs, no dependencies ever added by the tool.
-- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
+- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
 - If the user asks for dependencies (a framework, a database), ask once, then add via `npm install` and extend the tests accordingly.
-- Projects are plain Node — `npm start` (web/api) or `node cli.mjs help` (cli); no other tooling assumed.
+- Projects are plain Node — `npm start` (web/api), `node cli.mjs help` (cli), `import ... from './index.mjs'` (library); no other tooling assumed.

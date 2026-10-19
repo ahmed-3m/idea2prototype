@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Template: `library` — importable zero-dep module (`createStore` observable state container, `memoAsync` with in-flight dedupe) plus tests; for library/util prototypes instead of apps.
+- `check` boot step becomes an import smoke test for `library` scaffolds (loads `index.mjs`, verifies the public API exports) — 3/3 PASS, no server needed.
+- `check` now reports scaffold/engine version drift as a non-fatal note line; `check --json` includes `scaffoldVersion`.
+- Community files: issue templates (bug/feature), PR template, `SECURITY.md`, `CODE_OF_CONDUCT.md`.
+- Docs: help text and SKILL.md now list all five templates (`web`, `api`, `cli`, `worker`, `library`).
+
 ## 0.3.0
 
 - Template: `worker` — persistent job queue (JSON-file store, retry with maxAttempts, custom handlers via `registerHandler`) with restart-persistence tests.
