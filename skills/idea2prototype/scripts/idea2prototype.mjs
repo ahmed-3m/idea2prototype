@@ -326,12 +326,13 @@ async function bootServer(projectDir, marker) {
   if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
+  let app; // closed in finally once started — a leaked listener hangs the process forever
   try {
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
     }
-    const app = await withTimeout(mod.start(0), 10_000, 'server start');
+    app = await withTimeout(mod.start(0), 10_000, 'server start');
     // redirect: 'manual' — never follow a redirect off the probe target; the
     // 3xx itself counts as serving (foreign ok-range is 200–399).
     const probe = async (path) =>
@@ -345,7 +346,6 @@ async function bootServer(projectDir, marker) {
       detail = `GET /api/health -> 404, GET / -> ${res.status}`;
     }
     const body = await res.json().catch(() => ({}));
-    await app.close();
 
     // Scaffolded projects follow the template contract (health returns
     // {"status":"ok"}); foreign projects only have to start and serve.
@@ -358,6 +358,8 @@ async function bootServer(projectDir, marker) {
     return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
   } catch (err) {
     return { name: 'boot', status: 'fail', detail: String(err?.message ?? err) };
+  } finally {
+    if (typeof app?.close === 'function') await app.close().catch(() => {});
   }
 }
 
@@ -434,16 +436,19 @@ function help() {
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
   SAY(`  idea2prototype list                             available templates and features`);
+  SAY(`  idea2prototype version                          print the engine version`);
 }
 
 // ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
-const withTimeout = (promise, ms, label) =>
-  Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
-  ]);
+const withTimeout = (promise, ms, label) => {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
 
 function parseFlags(args, valueFlags) {
   const out = { _: [] };
@@ -496,7 +501,7 @@ async function replacePlaceholders(root, mapping) {
 }
 
 async function collectNodeFiles(root) {
-  const skip = new Set(['node_modules', '.git', 'public', 'data', 'dist', 'coverage']);
+  const skip = new Set(['node_modules', '.git', 'public', 'data', 'dist', 'coverage', 'uploads']);
   const out = [];
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
