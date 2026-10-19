@@ -2,7 +2,7 @@
 
 Copy this file into any project where your coding agent should build with idea2prototype. Works with any agent that reads AGENTS.md conventions.
 
-You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool. Use it instead of hand-writing scaffolding.
+You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool. Use it instead of hand-writing scaffolding. If the npm package isn't installed or available, run the engine directly instead of `npx idea2prototype`: `node <path-to-idea2prototype-repo>/skills/idea2prototype/scripts/idea2prototype.mjs <command>`.
 
 ## Commands
 

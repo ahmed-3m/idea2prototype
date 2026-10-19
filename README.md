@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node >= 18.17](https://img.shields.io/badge/node-%3E%3D18.17-green.svg)](#)
+[![Node >= 18.17](https://img.shields.io/badge/node-%3E%3D18.17-green.svg)](https://nodejs.org/en/about/previous-releases)
 
 **Turn ideas into tested prototypes — token-lean, for any coding agent.** Zero-dependency scaffolds, feature modules with tests baked in, one-command verification, and a repo map for surgical context. Ships as an npm CLI (`i2p`) and a [ZCode](https://z.ai) plugin; works with any agent that can run a shell (Claude Code, Cline, OpenHands, Cursor, …).
 
@@ -51,16 +51,25 @@ Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON A
 
 ## Quickstart
 
-**Any agent or plain shell:**
+**Any agent or plain shell — works from a clean clone:**
+
+```bash
+git clone https://github.com/ahmed-3m/idea2prototype
+node idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs new my-app --template web --name "My App" --idea "recipe box"
+cd my-app && npm start          # http://127.0.0.1:3000
+npm run check                   # the verdict above
+node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes
+npm run check                   # still PASS — now with CRUD tests
+```
+
+**Once published on npm** the same session is shorter:
 
 ```bash
 npx idea2prototype new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start          # http://127.0.0.1:3000
-npm run check                   # the verdict above
-npx idea2prototype add api-crud --resource recipes
-npx idea2prototype add auth-local
-npm run check                   # still PASS — now with CRUD + auth tests
+cd my-app && npm start && npx idea2prototype add api-crud --resource recipes && npm run check
 ```
+
+It is also mirrored on the GitHub Packages registry as `@ahmed-3m/idea2prototype` (published automatically per release) — note that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as a mirror, not the primary channel.
 
 **ZCode plugin:** add this repo's marketplace, install `idea2prototype`, then pick the skill in the composer or use `/proto-new a recipe box with search`.
 
