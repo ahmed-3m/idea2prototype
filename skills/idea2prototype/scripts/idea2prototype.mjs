@@ -68,7 +68,10 @@ async function cmdNew(rest) {
   SAY(`prototype ready: ${slug} (${template} template, zero dependencies)`);
   SAY(`  spec:   ${join(dir, 'PROTOTYPE.md')}  <- fill Goal + Core flows before coding`);
   if (template === 'library') {
-    SAY(`  use:    import { createStore, memoAsync } from "${join(dir, 'index.mjs')}"`);
+    // derive the hint from the template so it can't drift when exports change
+    const tmplExports = findExports(await readFile(join(templateDir, 'index.mjs'), 'utf8'));
+    const entry = join(dir, 'index.mjs').replaceAll('\\', '/'); // forward slashes: copy-pasteable JS
+    SAY(`  use:    ${tmplExports.length ? `import { ${tmplExports.join(', ')} } from ` : 'import '}"${entry}"`);
   } else {
     SAY(`  run:    cd ${dir} && ${template === 'cli' ? 'node cli.mjs help' : 'npm start'}`);
   }
