@@ -17,7 +17,9 @@ permissions:
 jobs:
   github-packages:
     runs-on: ubuntu-latest
+    if: github.event_name == 'release'   # re-dispatch targets npmjs only; this job would 409
     permissions:
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -27,8 +29,8 @@ jobs:
           node-version: 22
           registry-url: https://npm.pkg.github.com
 
-      - name: Guard - tag must match package.json version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
         run: |
           PKG="$(node -p "require('./package.json').version")"
           if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
@@ -53,8 +55,8 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Guard - tag must match package.json version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
         run: |
           PKG="$(node -p "require('./package.json').version")"
           if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
