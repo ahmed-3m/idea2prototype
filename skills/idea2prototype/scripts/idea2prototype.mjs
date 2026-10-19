@@ -129,6 +129,18 @@ const FEATURES = {
       'wrap handlers: methods: { GET: rateLimit({ max: 10 })(handler) }',
     ],
   },
+  cors: {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/cors.mjs': 'route.tmpl.mjs',
+      'tests/cors.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/cors.mjs   cors({ origin, methods, credentials }) wrapper + GET /api/cors-ping demo',
+      'tests/cors.test.mjs  preflight + allowlist reflection + demo-route cases',
+      'wrap handlers: methods: { GET: cors({ origin: ["https://my.app"] })(handler) }',
+    ],
+  },
 };
 
 async function cmdAdd(rest) {
@@ -431,7 +443,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);

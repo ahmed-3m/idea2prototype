@@ -66,6 +66,13 @@ test('add rate-limit keeps the web project green', async (t) => {
   assert.match(stdout, /5 tests passed/); // 3 web + 2 rate-limit
 });
 
+test('add cors keeps the web project green', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'cors' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /6 tests passed/); // 3 web + 3 cors
+});
+
 test('scaffolds the api template and passes check', async (t) => {
   const projectDir = await scaffold(t, { template: 'api' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });

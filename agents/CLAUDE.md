@@ -11,6 +11,7 @@ You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool
 - `npx idea2prototype add auth-local` — register/login/logout/me (scrypt + signed cookies) + tests; `requireAuth` protects other routes
 - `npx idea2prototype add upload` — multipart file uploads + fetch-back + tests
 - `npx idea2prototype add rate-limit` — per-key fixed-window limiter (429 + Retry-After headers); `rateLimit()` wraps any handler
+- `npx idea2prototype add cors` — CORS wrapper (preflight + access-control-* headers, origin allowlists); `cors()` wraps any handler
 - `npm run check` (inside a project) — syntax + tests + boot, ~10-line verdict
 - `npx idea2prototype map` — paths + LOC + exports; read this before opening files
 
