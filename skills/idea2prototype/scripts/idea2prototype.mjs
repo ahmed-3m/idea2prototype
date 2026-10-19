@@ -585,10 +585,11 @@ const collectServerFiles = (root) =>
   collectJsFiles(root, { skip: SERVER_SKIP, keep: (name) => /\.(mjs|js)$/.test(name) && !name.endsWith('.config.cjs') });
 
 // public/ is browser territory: .js only, dual-parsed (ESM, then classic).
-const collectFrontendFiles = (projectDir) => {
+const FRONTEND_SKIP = new Set(['node_modules', '.git']);
+const collectFrontendFiles = async (projectDir) => {
   const publicDir = join(projectDir, 'public');
   return existsSync(publicDir)
-    ? collectJsFiles(publicDir, { skip: new Set(['node_modules', '.git']), keep: (name) => name.endsWith('.js') })
+    ? collectJsFiles(publicDir, { skip: FRONTEND_SKIP, keep: (name) => name.endsWith('.js') })
     : [];
 };
 
