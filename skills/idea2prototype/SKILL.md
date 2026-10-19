@@ -22,6 +22,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 - `add auth-local` — register/login/logout/me accounts: scrypt hashes, HMAC-signed cookies, `requireAuth` helper (web/api)
 - `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)
 - `add rate-limit` — per-key fixed-window limiter: `rateLimit({ max, windowMs, keyFn })` wraps any handler, 429 + Retry-After + X-RateLimit-* headers, `GET /api/ping` demo (web/api)
+- `add cors` — Cross-Origin Resource Sharing: `cors({ origin, methods, credentials })` wraps any handler, answers OPTIONS preflights, stamps access-control-* headers, `GET /api/cors-ping` demo (web/api)
 - `check` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects
 - `verify [dir]` — same verdict on ANY Node project (judge mode)
 - `map [dir]` — compact repo map (paths + LOC + exports); run it before opening files
