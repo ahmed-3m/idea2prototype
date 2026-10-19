@@ -15,6 +15,8 @@ Idea2Prototype check — PASS (3/3)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
+**Status:** v0.8.0 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
+
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and `public/*.js` (parsed as both ESM and classic script — only code broken in both modes fails).
 
 ## Why
@@ -67,8 +69,8 @@ npm run check                   # still PASS — now with CRUD tests
 **Once published on npm** the same session is shorter:
 
 ```bash
-npx idea2prototype new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start && npx idea2prototype add api-crud --resource recipes && npm run check
+npx @ahmed-3m/idea2prototype new my-app --template web --name "My App" --idea "recipe box"
+cd my-app && npm start && npx @ahmed-3m/idea2prototype add api-crud --resource recipes && npm run check
 ```
 
 It is also mirrored on the GitHub Packages registry as `@ahmed-3m/idea2prototype` (published automatically per release) — note that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as a mirror, not the primary channel.
@@ -106,7 +108,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 
 ## Benchmarks
 
-`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included.
+`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included. Three specs are archived: specs 1–2 (web app, API) favor the harness (23% fewer hand-written LOC, 2× tests, zero runner-compat failures on the control arm); spec 3 (micro-CLI) is an honest loss on speed and LOC — fixed overhead dominates tiny builds — with reliability and function at parity.
 
 ## Design rules
 
@@ -116,13 +118,13 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 4. **No destructive operations.** `new` refuses non-empty directories.
 5. **Portable core.** One `.mjs` engine; plugin/skill/npm wrappers are sugar.
 
-One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-based check arrives with the npm package.
+One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-driven check is on the roadmap.
 
-Another boundary worth naming: templates are single-purpose. A task needing a web app **and** background jobs scaffolds as `web` and hand-builds the job-queue part (or vice versa) — features compose within a template (auth × CRUD, rate-limit, cors), but templates do not compose with each other. A future `add worker`-style feature could close this; today the boundary is deliberate and documented.
+Another boundary worth naming: templates are single-purpose. A task needing a web app **and** background jobs scaffolds as `web` and hand-builds the job-queue part (or vice versa) — features compose within a template (auth × CRUD, rate-limit, cors, sse), but templates do not compose with each other. A future `add worker`-style feature could close this; today the boundary is deliberate and documented.
 
 ## Contributing
 
-New templates and features are exactly two template files + one registry entry — see [CONTRIBUTING.md](CONTRIBUTING.md). The engine suite (`node --test "tests/*.test.mjs"`) runs on ubuntu/windows across Node 18/22/24 in CI and must stay green. `AGENTS.md` documents the architecture for humans and coding agents alike.
+New templates and features are exactly two template files + one registry entry — see [CONTRIBUTING.md](CONTRIBUTING.md). The engine suite (`node --test tests/engine.test.mjs tests/consistency.test.mjs`) runs on ubuntu/windows across Node 18/22/24 in CI and must stay green. `AGENTS.md` documents the architecture for humans and coding agents alike.
 
 ## License
 
