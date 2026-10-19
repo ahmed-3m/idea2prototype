@@ -98,6 +98,27 @@ test('verify judges a foreign (non-scaffolded) project from another cwd', async 
   assert.match(res.stdout, /1 tests? passed/);
 });
 
+test('verify boots a foreign project that serves only a static root (no /api/health)', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-foreign2-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => {\n' +
+      '    if (req.url === "/api/health") { res.writeHead(404); return res.end(); }\n' +
+      '    res.writeHead(200, { "Content-Type": "text/html" }); res.end("<h1>hi</h1>");\n' +
+      '  });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ server, port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'tests', 'smoke.test.mjs'), "import test from 'node:test';\ntest('ok', () => {});\n");
+  const { stdout } = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /GET \/api\/health -> 404, GET \/ -> 200/);
+});
+
 test('check fails cleanly on a syntax error', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-broken-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

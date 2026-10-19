@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');
@@ -332,13 +332,27 @@ async function stepBoot(projectDir, testsPassed, marker) {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
     }
     const app = await withTimeout(mod.start(0), 10_000, 'server start');
-    const res = await withTimeout(fetch(`http://127.0.0.1:${app.port}/api/health`), 10_000, 'health request');
-    const body = await res.json();
-    await app.close();
-    if (res.status !== 200 || body.status !== 'ok') {
-      return { name: 'boot', status: 'fail', detail: `health returned ${res.status} ${JSON.stringify(body)}` };
+    const probe = async (path) => withTimeout(fetch(`http://127.0.0.1:${app.port}${path}`), 10_000, `${path} request`);
+    let res = await probe('/api/health');
+    let detail = `GET /api/health -> ${res.status}`;
+    // Foreign projects (verify mode) may not implement our template's health
+    // route — a server that starts and serves its own surface still boots.
+    if (res.status === 404) {
+      res = await probe('/');
+      detail = `GET /api/health -> 404, GET / -> ${res.status}`;
     }
-    return { name: 'boot', status: 'pass', detail: `GET /api/health -> 200 in ${Date.now() - started}ms` };
+    const body = await res.json().catch(() => ({}));
+    await app.close();
+
+    // Scaffolded projects follow the template contract (health returns
+    // {"status":"ok"}); foreign projects only have to start and serve.
+    const ok = marker
+      ? res.status === 200 && body.status === 'ok'
+      : res.status >= 200 && res.status < 400;
+    if (!ok) {
+      return { name: 'boot', status: 'fail', detail: `${detail} ${JSON.stringify(body)}` };
+    }
+    return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
   } catch (err) {
     return { name: 'boot', status: 'fail', detail: String(err?.message ?? err) };
   }

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { start } from '../server.mjs';
 import { rateLimit } from '../routes/ratelimit.mjs';
 
+// NOTE: both tests share the module-level rate buckets; the second test uses
+// custom keys so it is independent of the first test's IP bucket.
+
 test('GET /api/ping allows max then returns 429 with limit headers', async (t) => {
   const app = await start(0);
   t.after(() => app.close());

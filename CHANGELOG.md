@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Verifier fairness fix (found by the first control-arm benchmark run): `verify`'s boot probe required `/api/health` — a route only this tool's own templates ship. Boot now falls back to `GET /` when health returns 404 and accepts any 2xx/redirect, so foreign projects that never heard of our health route are judged on whether they start and serve, not on our template's DNA.
+
 ## 0.5.0
 
 - Feature: `add rate-limit` — per-key fixed-window limiter (`rateLimit({ max, windowMs, keyFn })` handler wrapper) with 429 + `Retry-After` + `X-RateLimit-*` headers, lazy bucket cleanup (no timers), and a live `GET /api/ping` demo route.
