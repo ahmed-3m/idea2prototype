@@ -1,8 +1,9 @@
-# Publishes the package to the GitHub Packages npm registry (npm.pkg.github.com)
-# whenever a release is published. The built-in GITHUB_TOKEN does the auth —
-# no secrets required. npmjs.com publishing is NOT handled here (needs NPM_TOKEN,
-# pending); this channel carries the scoped name @ahmed-3m/idea2prototype
-# because GitHub Packages hosts scoped names only.
+# Publishes the package to two npm registries whenever a release is published:
+#  - GitHub Packages (npm.pkg.github.com) — GITHUB_TOKEN auth, always runs
+#  - npmjs.org — NPM_TOKEN secret; skips with a visible warning until the
+#    secret is configured, then publishes on the next release (or re-run via
+#    workflow_dispatch). Both channels carry the scoped name
+#    @ahmed-3m/idea2prototype (GitHub Packages hosts scoped names only).
 name: publish
 
 on:
@@ -12,11 +13,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   github-packages:
     runs-on: ubuntu-latest
+    if: github.event_name == 'release'   # re-dispatch targets npmjs only; this job would 409
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -25,8 +29,8 @@ jobs:
           node-version: 22
           registry-url: https://npm.pkg.github.com
 
-      - name: Guard - tag must match package.json version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
         run: |
           PKG="$(node -p "require('./package.json').version")"
           if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
@@ -40,3 +44,33 @@ jobs:
           npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  npmjs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Publish to npmjs.org (visible skip until NPM_TOKEN is configured)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish"
+            exit 0
+          fi
+          npm pkg set name="@ahmed-3m/idea2prototype"
+          npm publish
