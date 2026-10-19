@@ -66,7 +66,7 @@ node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-
 npm run check                   # still PASS — now with CRUD tests
 ```
 
-**Once published on npm** the same session is shorter:
+**Using npx** the same session is shorter:
 
 ```bash
 npx @ahmed-3m/idea2prototype new my-app --template web --name "My App" --idea "recipe box"
@@ -108,7 +108,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 
 ## Benchmarks
 
-`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included. Three specs are archived: specs 1–2 (web app, API) favor the harness (23% fewer hand-written LOC, 2× tests, zero runner-compat failures on the control arm); spec 3 (micro-CLI) is an honest loss on speed and LOC — fixed overhead dominates tiny builds — with reliability and function at parity.
+`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included. Three specs are archived: specs 1–2 (web app, API) favor the harness (23% fewer hand-written LOC, 2× tests, zero runner-compat failures — the control's from-scratch `npm test` broke on Node 24/Windows); spec 3 (micro-CLI) is an honest loss on speed and LOC — fixed overhead dominates tiny builds — with reliability and function at parity.
 
 ## Design rules
 
