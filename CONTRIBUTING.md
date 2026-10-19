@@ -20,6 +20,7 @@ PRs welcome — especially new templates and features. The bar is simple: **the 
 
 ```bash
 node --test tests/engine.test.mjs   # full e2e suite, all green
+node --test tests/consistency.test.mjs   # version sync across engine/package/plugin/markers/CHANGELOG
 node --check skills/idea2prototype/scripts/idea2prototype.mjs
 ```
 

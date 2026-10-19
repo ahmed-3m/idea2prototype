@@ -18,5 +18,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Engine self-tests (scaffold → add → check → verify)
-        run: node --test tests/engine.test.mjs
+      - name: Engine self-tests + consistency guard (scaffold → add → check → verify)
+        run: node --test tests/engine.test.mjs tests/consistency.test.mjs
