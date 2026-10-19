@@ -38,6 +38,31 @@ test('scaffolds the web template and passes check', async (t) => {
   assert.match(stdout, /boot\s+PASS/);
 });
 
+// Regression for #17: the syntax step used to skip public/ entirely, so a
+// destroyed frontend still reported 'parse clean'. Frontend files are now
+// dual-parsed (ESM, then classic) — only code broken in BOTH modes fails.
+test('broken public/app.js fails the syntax step', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await writeFile(
+    join(projectDir, 'public', 'app.js'),
+    'function broken( {\nthis is not javascript at all\n',
+  );
+  const err = await i2p(['check'], { cwd: projectDir }).then(() => null, (e) => e);
+  assert.ok(err, 'check must exit non-zero on a broken frontend');
+  assert.match(err.stdout, /syntax\s+FAIL/);
+  assert.match(err.stdout, /public\/app\.js: does not parse as ESM or classic script/);
+});
+
+test('classic (non-ESM) scripts in public/ still pass check', async (t) => {
+  const projectDir = await scaffold(t, {});
+  // 0755 is a legal sloppy-mode octal literal but illegal in ESM — this file
+  // only passes via the CommonJS fallback parse.
+  await writeFile(join(projectDir, 'public', 'legacy.js'), 'var mode = 0755;\nconsole.log(mode);\n');
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /\(\d+ server \+ 2 frontend\)/);
+});
+
 test('add api-crud keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
