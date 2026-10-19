@@ -64,6 +64,19 @@ test('add auth-local passes check twice in a row (re-check loop)', async (t) => 
   assert.match(second.stdout, /4 tests passed/);
 });
 
+// Pins #19's composition story: stacking several features (auth + two CRUD
+// resources + rate-limit) on one scaffold must stay green out of the box.
+test('stacking multiple features keeps the project green', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await i2p(['add', 'auth-local'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'posts'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'comments'], { cwd: projectDir });
+  await i2p(['add', 'rate-limit'], { cwd: projectDir });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /10 tests passed/); // 3 web + 1 auth + 2+2 crud + 2 rate-limit
+});
+
 test('add upload keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'upload' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });

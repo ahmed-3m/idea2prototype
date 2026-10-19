@@ -31,10 +31,50 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ## Workflow (follow in order)
 
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
-2. **Never hand-write scaffold files.** `server.mjs`, `tests/`, `package.json`, `.idea2prototype.json` belong to the tool. Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
+2. **Never hand-write what `add` can generate; hand-edits are yours to keep.** `server.mjs`, `package.json`, `.idea2prototype.json` belong to the tool — never recreate them. Files under `routes/` and `tests/` are generated once, then yours: edit them in place (the tool never overwrites them). Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
 3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`; abuse protection → `add rate-limit` (then wrap hot handlers with `rateLimit()`). The server auto-loads `routes/*.mjs`; handlers return `[status, payload]`.
 4. **Tight loop: edit → `check` → fix.** Run `npm run check` (or the script's `check`) after every meaningful change. Read the verdict only — never run tests directly and never read raw logs. Need context? `map` first, then open only the files you're changing.
 5. **Done = check PASS + spec flows implemented.** Report the verdict lines and the spec checklist, then stop.
+
+## Composing features (worked example: auth × CRUD)
+
+Features compose by wrapping handlers — `add` generates each feature standalone, then you connect them with small edits to files you now own. Protecting `POST /api/posts` so only logged-in users may create, with the author stamped on the item:
+
+1. `add auth-local` and `add api-crud --resource posts`.
+2. In `routes/posts.mjs`, import the wrapper and wrap the POST handler (this is the whole route change):
+
+```js
+import { requireAuth } from './auth.mjs';
+
+// inside the '/api/posts' route object's methods:
+POST: requireAuth(async ({ body, user }) => {
+  const bad = requireObject(body);
+  if (bad) return bad;
+  const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body, author: user.username };
+  (await load()).push(item);
+  await persist();
+  return [201, item];
+}),
+```
+
+`requireAuth` rejects anonymous requests with 401 and provides `ctx.user` (`{ username }`) to the wrapped handler. `rateLimit(...)` from `add rate-limit` and `cors(...)` from `add cors` wrap handlers the same way — compose them by nesting.
+
+3. Fix the generated test: it POSTs without a session and now gets 401. Bootstrap a session instead of rewriting the whole file — register + login once, pass the cookie on protected calls (use a unique username per run; `data/users.json` persists between checks):
+
+```js
+const JSON_HEADERS = { 'content-type': 'application/json' };
+async function sessionCookie(base) {
+  const username = `author_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  await fetch(`${base}/api/auth/register`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  return login.headers.get('set-cookie').split(';')[0];
+}
+
+// in the test: const cookie = await sessionCookie(base);
+// const res = await fetch(`${base}/api/posts`, { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: ... });
+```
+
+Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite must all pass.
 
 ## Token discipline (why this exists)
 
