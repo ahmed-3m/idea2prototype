@@ -97,6 +97,8 @@ It is also mirrored on the GitHub Packages registry as `@ahmed-3m/idea2prototype
 4. **No destructive operations.** `new` refuses non-empty directories.
 5. **Portable core.** One `.mjs` engine; plugin/skill/npm wrappers are sugar.
 
+One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-based check arrives with the npm package.
+
 ## Contributing
 
 New templates and features are exactly two template files + one registry entry — see [CONTRIBUTING.md](CONTRIBUTING.md). The engine suite (`node --test "tests/*.test.mjs"`) runs on ubuntu/windows across Node 18/22/24 in CI and must stay green. `AGENTS.md` documents the architecture for humans and coding agents alike.
