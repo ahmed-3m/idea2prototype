@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Feature: `add cors` — Cross-Origin Resource Sharing wrapper (`cors({ origin, methods, headers, maxAge, credentials })`) in the rateLimit() pattern: OPTIONS preflights answered 204 + CORS headers without invoking the handler, `access-control-*` headers merged into every response, origin allowlists with matched-origin reflection; `GET/OPTIONS /api/cors-ping` demo + tests.
+- Benchmark: spec 2 (URL shortener) paired run archived — both arms verify PASS 3/3 and rubric 5/5; treatment wrote 23% fewer hand-written LOC with 2× tests and zero test-runner compat failures (control's from-scratch `npm test` broke on Node 24/Windows); results table in `benchmarks/specs.md` now carries specs 1–2.
+
 ## 0.5.2
 
 - Fix: `check`/`verify` lingered ~15s after the verdict — `withTimeout`'s timer was never cleared (web check 15.7s → 0.69s wall-clock; full engine suite minutes → ~11s).
