@@ -12,7 +12,7 @@ $ npm run check
 Idea2Prototype check — PASS (3/3)
   syntax  PASS  14 files parse clean
   tests   PASS  9 tests passed (3 files)
-  boot    PASS  GET /api/health -> 200 in 41ms
+  boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**.

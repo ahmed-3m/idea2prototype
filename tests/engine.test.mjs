@@ -259,6 +259,54 @@ test('verify does not follow redirects off the probe target', async (t) => {
   assert.match(stdout, /GET \/api\/health -> 302/);
 });
 
+// Regression for #18: the boot probe used to ask only /api/health, so a
+// server whose every real route 500s still verified PASS 3/3. The root is
+// now probed too — a 5xx root fails boot; a 4xx root (API-only project)
+// stays in the ok-range.
+test('verify fails a server whose root 500s even with a healthy /api/health', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-probe500-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => {\n' +
+      '    if (req.url === "/api/health") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ status: "ok" })); return; }\n' +
+      '    res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "boom" }));\n' +
+      '  });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ server, port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'tests', 'smoke.test.mjs'), "import test from 'node:test';\ntest(\'ok\', () => {});\n");
+  const err = await i2p(['verify', dir], { cwd: HERE }).then(() => null, (e) => e);
+  assert.ok(err, 'verify must exit non-zero when every real route 500s');
+  assert.match(err.stdout, /boot\s+FAIL/);
+  assert.match(err.stdout, /GET \/api\/health -> 200, GET \/ -> 500/);
+});
+
+test('verify still passes an API-only server whose root is a 404', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-api-only-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => {\n' +
+      '    if (req.url === "/api/health") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ status: "ok" })); return; }\n' +
+      '    if (req.url === "/api/items") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify([])); return; }\n' +
+      '    res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "not found" }));\n' +
+      '  });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ server, port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'tests', 'smoke.test.mjs'), "import test from 'node:test';\ntest(\'ok\', () => {});\n");
+  const { stdout } = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /GET \/api\/health -> 200, GET \/ -> 404/);
+});
+
 test('boot is skipped with a clear reason when tests fail', async (t) => {
   const projectDir = await scaffold(t, {});
   await writeFile(

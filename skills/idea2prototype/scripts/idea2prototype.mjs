@@ -353,9 +353,11 @@ async function bootServer(projectDir, marker) {
     let detail = `GET /api/health -> ${res.status}`;
     // Foreign projects (verify mode) may not implement our template's health
     // route — a server that starts and serves its own surface still boots.
+    let rootProbed = false;
     if (res.status === 404) {
       res = await probe('/');
       detail = `GET /api/health -> 404, GET / -> ${res.status}`;
+      rootProbed = true;
     }
     const body = await res.json().catch(() => ({}));
 
@@ -366,6 +368,18 @@ async function bootServer(projectDir, marker) {
       : res.status >= 200 && res.status < 400;
     if (!ok) {
       return { name: 'boot', status: 'fail', detail: `${detail} ${JSON.stringify(body)}` };
+    }
+
+    // #18: a health route alone can certify an app whose every real route
+    // 500s — also probe the root. 4xx on / is legitimate (API-only projects),
+    // a 5xx root is a real defect. Symmetric for scaffolded and foreign
+    // projects; a request error here surfaces via the outer catch.
+    if (!rootProbed) {
+      const root = await probe('/');
+      detail += `, GET / -> ${root.status}`;
+      if (root.status >= 500) {
+        return { name: 'boot', status: 'fail', detail: `${detail} — root serves an error` };
+      }
     }
     return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
   } catch (err) {
