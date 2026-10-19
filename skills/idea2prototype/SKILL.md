@@ -23,6 +23,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 - `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)
 - `add rate-limit` — per-key fixed-window limiter: `rateLimit({ max, windowMs, keyFn })` wraps any handler, 429 + Retry-After + X-RateLimit-* headers, `GET /api/ping` demo (web/api)
 - `add cors` — Cross-Origin Resource Sharing: `cors({ origin, methods, credentials })` wraps any handler, answers OPTIONS preflights, stamps access-control-* headers, `GET /api/cors-ping` demo (web/api)
+- `add sse` — Server-Sent Events: `GET /api/events` stream (`text/event-stream`) — write chunks to `ctx.res` directly and return nothing; the server keeps the stream open and cleans up heartbeats on disconnect (web/api)
 - `check` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects. Syntax covers server files (`node --check`) and `public/*.js` (dual ESM/classic parse — broken-in-both fails)
 - `verify [dir]` — same verdict on ANY Node project (judge mode)
 - `map [dir]` — compact repo map (paths + LOC + exports); run it before opening files
@@ -32,7 +33,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
 2. **Never hand-write what `add` can generate; hand-edits are yours to keep.** `server.mjs`, `package.json`, `.idea2prototype.json` belong to the tool — never recreate them. Files under `routes/` and `tests/` are generated once, then yours: edit them in place (the tool never overwrites them). Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
-3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`; abuse protection → `add rate-limit` (then wrap hot handlers with `rateLimit()`). The server auto-loads `routes/*.mjs`; handlers return `[status, payload]`.
+3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`; abuse protection → `add rate-limit` (then wrap hot handlers with `rateLimit()`); live updates → `add sse`. The server auto-loads `routes/*.mjs`; handlers return `[status, payload]` — or write chunks to `ctx.res` directly and return nothing to stream (the `sse` demo shows the pattern).
 4. **Tight loop: edit → `check` → fix.** Run `npm run check` (or the script's `check`) after every meaningful change. Read the verdict only — never run tests directly and never read raw logs. Need context? `map` first, then open only the files you're changing.
 5. **Done = check PASS + spec flows implemented.** Report the verdict lines and the spec checklist, then stop.
 

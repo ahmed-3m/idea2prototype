@@ -44,6 +44,7 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 | `i2p add upload` | multipart file uploads + fetch-back endpoint + tests |
 | `i2p add rate-limit` | per-key fixed-window limiter: 429 + `Retry-After` + `X-RateLimit-*` headers |
 | `i2p add cors` | CORS wrapper: preflight answers + `access-control-*` headers, origin allowlists |
+| `i2p add sse` | Server-Sent Events stream: `GET /api/events`, `text/event-stream` + heartbeats |
 | `i2p check [--json]` | syntax + tests + boot, compact verdict (also `npm run check`) |
 | `i2p verify [dir] [--json]` | same verdict on ANY Node project — judge mode |
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |

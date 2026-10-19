@@ -117,12 +117,24 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
             }
           }
         }
-        const [status, payload, headers] = await handler(ctx);
+        const result = await handler(ctx);
+        // Streaming escape hatch: a handler that wrote chunks directly to
+        // ctx.res (e.g. Server-Sent Events) returns nothing — the stream
+        // stays open past this request; don't try to send a JSON response.
+        if (res.headersSent || res.writableEnded) return;
+        const [status, payload, headers] = result;
         return sendJson(res, status, payload, headers);
       }
       if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, url, res);
       return sendJson(res, 404, { error: 'not found' });
     } catch (err) {
+      // Streaming handlers may have sent headers before throwing — sendJson
+      // would then throw ERR_HTTP_HEADERS_SENT inside this catch and crash
+      // the process. Kill the socket instead; the response is already broken.
+      if (res.headersSent || res.writableEnded) {
+        res.destroy();
+        return;
+      }
       return sendJson(res, 500, { error: String(err?.message ?? err) });
     }
   });

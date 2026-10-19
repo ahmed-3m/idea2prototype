@@ -218,6 +218,83 @@ test('add cors keeps the web project green', async (t) => {
   assert.match(stdout, /6 tests passed/); // 3 web + 3 cors
 });
 
+test('add sse keeps the web project green', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'sse' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /4 tests passed/); // 3 web + 1 sse stream
+});
+
+test('add sse keeps the api project green', async (t) => {
+  const projectDir = await scaffold(t, { template: 'api', feature: 'sse' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /4 tests passed/); // 3 api + 1 sse stream
+});
+
+// Pins the streaming-contract guard from the non-streaming side: a handler
+// that returns nothing (and never wrote to res) must land as a clean 500 —
+// not a crash, not a hang. The streaming side is the sse feature test above.
+test('handler returning nothing yields a clean 500 (stream contract)', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await mkdir(join(projectDir, 'routes'), { recursive: true });
+  await writeFile(
+    join(projectDir, 'routes', 'broken.mjs'),
+    [
+      'export default [',
+      '  { path: "/api/broken", methods: { GET: async () => {} } },',
+      '  {',
+      '    path: "/api/throw-after-headers",',
+      '    methods: {',
+      '      // streaming shape: headers sent, then the handler blows up — the',
+      '      // outer catch must kill the socket, NOT call sendJson (which would',
+      '      // throw ERR_HTTP_HEADERS_SENT inside the catch and crash the server)',
+      '      GET: async ({ res }) => {',
+      '        res.writeHead(200, { "content-type": "text/event-stream" });',
+      '        res.write("event: boom\\n\\n");',
+      '        throw new Error("mid-stream failure");',
+      '      },',
+      '    },',
+      '  },',
+      '];',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(projectDir, 'tests', 'broken.test.mjs'),
+    `import test from 'node:test';
+import assert from 'node:assert/strict';
+import { start } from '../server.mjs';
+
+test('GET /api/broken -> 500 JSON error, server stays up', async () => {
+  const app = await start(0);
+  try {
+    const res = await fetch(\`http://127.0.0.1:\${app.port}/api/broken\`);
+    assert.equal(res.status, 500);
+    assert.ok((await res.json()).error);
+    const health = await fetch(\`http://127.0.0.1:\${app.port}/api/health\`);
+    assert.equal(health.status, 200);
+  } finally { await app.close(); }
+});
+
+test('handler throwing AFTER headers: connection breaks, server survives', async () => {
+  const app = await start(0);
+  const root = \`http://127.0.0.1:\${app.port}\`;
+  try {
+    // Race-tolerant: headers may reach the client before the server kills
+    // the socket — either the fetch itself rejects, or the body read does.
+    const res = await fetch(\`\${root}/api/throw-after-headers\`).catch(() => null);
+    if (res) await assert.rejects(res.text(), /terminated|abort|socket|fetch failed/i);
+    const health = await fetch(\`\${root}/api/health\`);
+    assert.equal(health.status, 200);
+  } finally { await app.close(); }
+});
+`,
+  );
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+});
+
 // #20: the rate-limit/cors add summaries must tell the agent the demo route
 // is disposable — otherwise /api/ping clutter stays on the real API surface.
 test('demo-route features warn that their demo route is disposable', async (t) => {
