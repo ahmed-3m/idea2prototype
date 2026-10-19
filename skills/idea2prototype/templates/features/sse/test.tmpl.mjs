@@ -18,8 +18,15 @@ test('GET /api/events streams: SSE headers + a readable first event', async () =
     assert.match(res.headers.get('cache-control') ?? '', /no-cache/);
 
     reader = res.body.getReader();
-    const { value } = await reader.read();
-    const text = new TextDecoder().decode(value);
+    // Chunk boundaries do not line up with event boundaries — accumulate
+    // until the first complete frame (delimited by a blank line) arrives.
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!text.includes('\n\n')) {
+      const { value, done } = await reader.read();
+      if (done) break; // a closed stream must fail the assertion, not spin forever
+      text += decoder.decode(value, { stream: true });
+    }
     assert.match(text, /event: connected/);
     assert.match(text, /data: \{/);
   } finally {
