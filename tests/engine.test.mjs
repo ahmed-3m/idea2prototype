@@ -146,44 +146,47 @@ test('documented auth x crud composition works end to end', async (t) => {
     .replace(/return \[201, item\];\r?\n      \},/, 'return [201, item];\n      }),');
   await writeFile(routePath, route);
 
-  // Step 3 of the docs: session-bootstrap BOTH generated POSTs.
+  // Step 3 of the docs: session-bootstrap BOTH generated POSTs. The embedded
+  // file is the documented session pattern verbatim (\${ escapes the outer
+  // template literal; the generated file keeps its own interpolation).
   await writeFile(
     join(projectDir, 'tests', 'posts.test.mjs'),
-    "import test from 'node:test';\n" +
-      "import assert from 'node:assert/strict';\n" +
-      "import { start } from '../server.mjs';\n" +
-      '\n' +
-      "const JSON_HEADERS = { 'content-type': 'application/json' };\n" +
-      'async function session(root) {\n' +
-      "  const username = `author_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;\n" +
-      '  await fetch(`${root}/api/auth/register`, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ username, password: \'correct horse battery\' }) });\n' +
-      '  const login = await fetch(`${root}/api/auth/login`, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ username, password: \'correct horse battery\' }) });\n' +
-      "  return { cookie: login.headers.get('set-cookie').split(';')[0], username };\n" +
-      '}\n' +
-      '\n' +
-      "test('protected posts: anon 401, authed 201 + author stamp', async () => {\n" +
-      '  const app = await start(0);\n' +
-      '  const root = `http://127.0.0.1:${app.port}`;\n' +
-      '  const base = `${root}/api/posts`;\n' +
-      '  try {\n' +
-      '    const { cookie, username } = await session(root);\n' +
-      '    const anon = await fetch(base, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ title: \'anon\' }) });\n' +
-      '    assert.equal(anon.status, 401);\n' +
-      '    const created = await fetch(base, { method: \'POST\', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify({ title: \'first\' }) });\n' +
-      '    assert.equal(created.status, 201);\n' +
-      '    assert.equal((await created.json()).author, username);\n' +
-      '  } finally { await app.close(); }\n' +
-      '});\n' +
-      '\n' +
-      "test('protected posts: non-object body still 400 with a session', async () => {\n" +
-      '  const app = await start(0);\n' +
-      '  const root = `http://127.0.0.1:${app.port}`;\n' +
-      '  try {\n' +
-      '    const { cookie } = await session(root);\n' +
-      '    const res = await fetch(`${root}/api/posts`, { method: \'POST\', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify([\'nope\']) });\n' +
-      '    assert.equal(res.status, 400);\n' +
-      '  } finally { await app.close(); }\n' +
-      '});\n',
+    `import test from 'node:test';
+import assert from 'node:assert/strict';
+import { start } from '../server.mjs';
+
+const JSON_HEADERS = { 'content-type': 'application/json' };
+async function session(root) {
+  const username = \`author_\${Date.now().toString(36)}\${Math.random().toString(36).slice(2, 7)}\`;
+  await fetch(\`\${root}/api/auth/register\`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  const login = await fetch(\`\${root}/api/auth/login\`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  return { cookie: login.headers.get('set-cookie').split(';')[0], username };
+}
+
+test('protected posts: anon 401, authed 201 + author stamp', async () => {
+  const app = await start(0);
+  const root = \`http://127.0.0.1:\${app.port}\`;
+  const base = \`\${root}/api/posts\`;
+  try {
+    const { cookie, username } = await session(root);
+    const anon = await fetch(base, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ title: 'anon' }) });
+    assert.equal(anon.status, 401);
+    const created = await fetch(base, { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify({ title: 'first' }) });
+    assert.equal(created.status, 201);
+    assert.equal((await created.json()).author, username);
+  } finally { await app.close(); }
+});
+
+test('protected posts: non-object body still 400 with a session', async () => {
+  const app = await start(0);
+  const root = \`http://127.0.0.1:\${app.port}\`;
+  try {
+    const { cookie } = await session(root);
+    const res = await fetch(\`\${root}/api/posts\`, { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify(['nope']) });
+    assert.equal(res.status, 400);
+  } finally { await app.close(); }
+});
+`,
   );
 
   const first = await i2p(['check'], { cwd: projectDir });
