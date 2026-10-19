@@ -308,7 +308,7 @@ async function stepBoot(projectDir, testsPassed, marker) {
 async function bootLibrary(projectDir) {
   const started = Date.now();
   try {
-    const mod = await import(pathToFileURL(join(projectDir, 'index.mjs')).href);
+    const mod = await withTimeout(import(pathToFileURL(join(projectDir, 'index.mjs')).href), 15_000, 'library import');
     const names = Object.keys(mod);
     if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
     return {

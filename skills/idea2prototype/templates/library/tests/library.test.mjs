@@ -51,3 +51,9 @@ test('memoAsync: rejections are not cached', async () => {
   await assert.rejects(boom(), /nope/);
   assert.equal(calls, 2);
 });
+
+test('memoAsync: undefined arguments are rejected, never aliased to null', async () => {
+  const fn = memoAsync(async (x) => x);
+  await assert.rejects(fn(undefined), TypeError);
+  assert.equal(await fn(null), null); // null itself stays a valid argument
+});
