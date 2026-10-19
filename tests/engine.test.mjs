@@ -38,6 +38,50 @@ test('scaffolds the web template and passes check', async (t) => {
   assert.match(stdout, /boot\s+PASS/);
 });
 
+// Regression for #17: the syntax step used to skip public/ entirely, so a
+// destroyed frontend still reported 'parse clean'. Frontend files are now
+// dual-parsed (ESM, then classic) — only code broken in BOTH modes fails.
+test('broken public/app.js fails the syntax step', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await writeFile(
+    join(projectDir, 'public', 'app.js'),
+    'function broken( {\nthis is not javascript at all\n',
+  );
+  const err = await i2p(['check'], { cwd: projectDir }).then(() => null, (e) => e);
+  assert.ok(err, 'check must exit non-zero on a broken frontend');
+  assert.match(err.stdout, /syntax\s+FAIL/);
+  assert.match(err.stdout, /public\/app\.js: does not parse as ESM or classic script/);
+});
+
+test('classic (non-ESM) scripts in public/ still pass check', async (t) => {
+  const projectDir = await scaffold(t, {});
+  // 0755 is a legal sloppy-mode octal literal but illegal in ESM — this file
+  // only passes via the CommonJS fallback parse.
+  await writeFile(join(projectDir, 'public', 'legacy.js'), 'var mode = 0755;\nconsole.log(mode);\n');
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  // web template ships exactly one public/*.js (app.js); legacy.js makes 2.
+  assert.match(stdout, /\(\d+ server \+ 2 frontend\)/);
+});
+
+// Big-file behavior (from review finding B1 on this very PR, empirically
+// corrected): a >1 MiB VALID file parses clean, and a >1 MiB single-line
+// BROKEN file is still caught — the default 1 MiB spawnSync maxBuffer
+// ENOBUFSs on that error output (status null); the 16 MiB buffer keeps the
+// status meaningful.
+test('large (>1 MiB) frontend files: valid passes, broken single-line fails', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const valid = `const a = [${'"x",'.repeat(800_000)}];\nexport default a;\n`; // ~1.6 MB
+  const broken = `const a = [${'"x",'.repeat(800_000)}]; this is ( not js\n`; // ~1.6 MB one line
+  await writeFile(join(projectDir, 'public', 'big-ok.js'), valid);
+  await writeFile(join(projectDir, 'public', 'big-bad.js'), broken);
+  const err = await i2p(['check'], { cwd: projectDir }).then(() => null, (e) => e);
+  assert.ok(err, 'check must exit non-zero when a big frontend file is broken');
+  assert.match(err.stdout, /syntax\s+FAIL/);
+  assert.match(err.stdout, /big-bad\.js: does not parse as ESM or classic script/);
+  assert.doesNotMatch(err.stdout, /big-ok\.js/);
+});
+
 test('add api-crud keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });

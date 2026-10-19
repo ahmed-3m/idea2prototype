@@ -10,12 +10,12 @@
 $ npm run check
 
 Idea2Prototype check — PASS (3/3)
-  syntax  PASS  14 files parse clean
-  tests   PASS  9 tests passed (3 files)
+  syntax  PASS  3 files parse clean (2 server + 1 frontend)
+  tests   PASS  3 tests passed (1 files)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
-That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**.
+That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and `public/*.js` (parsed as both ESM and classic script — only code broken in both modes fails).
 
 ## Why
 
