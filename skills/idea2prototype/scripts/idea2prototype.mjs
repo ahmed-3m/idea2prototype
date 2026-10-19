@@ -4,7 +4,7 @@
 //
 // Commands:
 //   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
-//   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload
+//   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
 //   idea2prototype check [--json]    syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.1';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');
@@ -117,6 +117,18 @@ const FEATURES = {
       'files stored in uploads/ (5MB cap); zero-dependency multipart parser',
     ],
   },
+  'rate-limit': {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'routes/ratelimit.mjs': 'route.tmpl.mjs',
+      'tests/ratelimit.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'routes/ratelimit.mjs   rateLimit({ max, windowMs, keyFn }) wrapper + GET /api/ping demo',
+      'tests/ratelimit.test.mjs  429 + Retry-After + header + key-isolation cases',
+      'wrap handlers: methods: { GET: rateLimit({ max: 10 })(handler) }',
+    ],
+  },
 };
 
 async function cmdAdd(rest) {
@@ -124,7 +136,8 @@ async function cmdAdd(rest) {
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
   const available = Object.keys(FEATURES).join(', ');
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
-  const def = FEATURES[feature] ?? ((() => die(`unknown feature "${feature}" — available: ${available}`))());
+  const def = FEATURES[feature];
+  if (!def) die(`unknown feature "${feature}" — available: ${available}`);
 
   const marker = await loadMarker();
   if (!def.appliesTo.includes(marker.template)) {
@@ -287,46 +300,62 @@ async function stepTests(projectDir, syntaxPassed) {
 
 async function stepBoot(projectDir, testsPassed, marker) {
   if (!testsPassed) return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
-
   // Library projects have no server to probe — boot = import the public API.
-  if (marker?.template === 'library') {
-    const started = Date.now();
-    try {
-      const mod = await import(pathToFileURL(join(projectDir, 'index.mjs')).href);
-      const names = Object.keys(mod);
-      if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
-      return {
-        name: 'boot',
-        status: 'pass',
-        detail: `index.mjs loads in ${Date.now() - started}ms — exports: ${names.join(', ')}`,
-      };
-    } catch (err) {
-      return { name: 'boot', status: 'fail', detail: `import failed: ${String(err?.message ?? err)}` };
-    }
-  }
+  if (marker?.template === 'library') return bootLibrary(projectDir);
+  return bootServer(projectDir, marker);
+}
 
+async function bootLibrary(projectDir) {
+  const started = Date.now();
+  try {
+    const mod = await withTimeout(import(pathToFileURL(join(projectDir, 'index.mjs')).href), 15_000, 'library import');
+    const names = Object.keys(mod);
+    if (!names.length) return { name: 'boot', status: 'fail', detail: 'index.mjs loads but exports nothing' };
+    return {
+      name: 'boot',
+      status: 'pass',
+      detail: `index.mjs loads in ${Date.now() - started}ms — exports: ${names.join(', ')}`,
+    };
+  } catch (err) {
+    return { name: 'boot', status: 'fail', detail: `import failed: ${String(err?.message ?? err)}` };
+  }
+}
+
+async function bootServer(projectDir, marker) {
   const serverPath = join(projectDir, 'server.mjs');
   if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
   try {
-    const withTimeout = (promise, ms, label) =>
-      Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
-      ]);
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
     }
     const app = await withTimeout(mod.start(0), 10_000, 'server start');
-    const res = await withTimeout(fetch(`http://127.0.0.1:${app.port}/api/health`), 10_000, 'health request');
-    const body = await res.json();
-    await app.close();
-    if (res.status !== 200 || body.status !== 'ok') {
-      return { name: 'boot', status: 'fail', detail: `health returned ${res.status} ${JSON.stringify(body)}` };
+    // redirect: 'manual' — never follow a redirect off the probe target; the
+    // 3xx itself counts as serving (foreign ok-range is 200–399).
+    const probe = async (path) =>
+      withTimeout(fetch(`http://127.0.0.1:${app.port}${path}`, { redirect: 'manual' }), 10_000, `${path} request`);
+    let res = await probe('/api/health');
+    let detail = `GET /api/health -> ${res.status}`;
+    // Foreign projects (verify mode) may not implement our template's health
+    // route — a server that starts and serves its own surface still boots.
+    if (res.status === 404) {
+      res = await probe('/');
+      detail = `GET /api/health -> 404, GET / -> ${res.status}`;
     }
-    return { name: 'boot', status: 'pass', detail: `GET /api/health -> 200 in ${Date.now() - started}ms` };
+    const body = await res.json().catch(() => ({}));
+    await app.close();
+
+    // Scaffolded projects follow the template contract (health returns
+    // {"status":"ok"}); foreign projects only have to start and serve.
+    const ok = marker
+      ? res.status === 200 && body.status === 'ok'
+      : res.status >= 200 && res.status < 400;
+    if (!ok) {
+      return { name: 'boot', status: 'fail', detail: `${detail} ${JSON.stringify(body)}` };
+    }
+    return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
   } catch (err) {
     return { name: 'boot', status: 'fail', detail: String(err?.message ?? err) };
   }
@@ -400,7 +429,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
@@ -410,6 +439,12 @@ function help() {
 // ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
+const withTimeout = (promise, ms, label) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
+  ]);
+
 function parseFlags(args, valueFlags) {
   const out = { _: [] };
   for (let i = 0; i < args.length; i++) {
@@ -425,25 +460,23 @@ function parseFlags(args, valueFlags) {
   return out;
 }
 
-async function loadMarker() {
-  const markerPath = join(process.cwd(), '.idea2prototype.json');
-  if (!existsSync(markerPath)) {
-    die(`not a idea2prototype project (no .idea2prototype.json in ${process.cwd()}) — run: idea2prototype new <dir>`);
-  }
-  try {
-    return JSON.parse(await readFile(markerPath, 'utf8'));
-  } catch {
-    die('.idea2prototype.json is not valid JSON');
-  }
-}
-
-// Best-effort marker read for an arbitrary directory (verify/check internals).
+// Canonical marker reader: null when absent or unparseable.
 async function readMarker(projectDir) {
   try {
     return JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
   } catch {
     return null;
   }
+}
+
+async function loadMarker() {
+  const markerPath = join(process.cwd(), '.idea2prototype.json');
+  if (!existsSync(markerPath)) {
+    die(`not a idea2prototype project (no .idea2prototype.json in ${process.cwd()}) — run: idea2prototype new <dir>`);
+  }
+  const marker = await readMarker(process.cwd());
+  if (!marker) die('.idea2prototype.json is not valid JSON');
+  return marker;
 }
 
 async function replacePlaceholders(root, mapping) {

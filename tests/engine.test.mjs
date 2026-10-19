@@ -1,5 +1,5 @@
 // Engine self-tests: exercise every idea2prototype command end-to-end.
-// These are also the CI workhorse — `node --test "tests/*.test.mjs"`.
+// These are also the CI workhorse — `node --test tests/engine.test.mjs`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -14,60 +14,122 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const SCRIPT = fileURLToPath(new URL('../skills/idea2prototype/scripts/idea2prototype.mjs', import.meta.url));
 const i2p = (args, opts = {}) => run(process.execPath, [SCRIPT, ...args], { timeout: 180_000, ...opts });
 
-test('scaffolds the web template and passes check', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-web-'));
+// Scaffold a throwaway project (auto-cleaned via t.after) and return its dir.
+// Every scaffold-based test goes through this so the ritual exists once.
+async function scaffold(t, { template = 'web', name, idea, feature, resource } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web', '--name', 'My App', '--idea', 'todo list'], { cwd: dir });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  await i2p([
+    'new', 'app', '--template', template,
+    ...(name ? ['--name', name] : []),
+    ...(idea ? ['--idea', idea] : []),
+  ], { cwd: dir });
+  const projectDir = join(dir, 'app');
+  if (feature) {
+    await i2p(['add', feature, ...(resource ? ['--resource', resource] : [])], { cwd: projectDir });
+  }
+  return projectDir;
+}
+
+test('scaffolds the web template and passes check', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web', name: 'My App', idea: 'todo list' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /boot\s+PASS/);
 });
 
 test('add api-crud keeps the web project green', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-crud-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  await i2p(['add', 'api-crud', '--resource', 'todos'], { cwd: join(dir, 'app') });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /5 tests passed/);
 });
 
 test('add auth-local keeps the web project green', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-auth-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  await i2p(['add', 'auth-local'], { cwd: join(dir, 'app') });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  const projectDir = await scaffold(t, { feature: 'auth-local' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /4 tests passed/); // 3 web + 1 auth session flow
 });
 
 test('add upload keeps the web project green', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-up-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  await i2p(['add', 'upload'], { cwd: join(dir, 'app') });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
+  const projectDir = await scaffold(t, { feature: 'upload' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /5 tests passed/); // 3 web + 2 upload
 });
 
+test('add rate-limit keeps the web project green', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'rate-limit' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /5 tests passed/); // 3 web + 2 rate-limit
+});
+
 test('scaffolds the api template and passes check', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-api-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'svc', '--template', 'api'], { cwd: dir });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'svc') });
+  const projectDir = await scaffold(t, { template: 'api' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
 });
 
 test('scaffolds the cli template and passes check', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-cli-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'tool', '--template', 'cli'], { cwd: dir });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'tool') });
+  const projectDir = await scaffold(t, { template: 'cli' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(2\/3 passed\)/);
   assert.match(stdout, /no server\.mjs/);
+});
+
+test('scaffolds the worker template and passes check', async (t) => {
+  const projectDir = await scaffold(t, { template: 'worker' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(2\/3 passed\)/);
+  assert.match(stdout, /3 tests passed/);
+  assert.match(stdout, /no server\.mjs/);
+});
+
+test('scaffolds the library template and passes check with an import smoke test', async (t) => {
+  const projectDir = await scaffold(t, { template: 'library', name: 'My Lib', idea: 'state helpers' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /boot\s+PASS/);
+  assert.match(stdout, /index\.mjs loads/);
+  assert.match(stdout, /createStore, memoAsync/);
+  // fresh scaffold matches the engine version — no drift note expected
+  assert.doesNotMatch(stdout, /note\s+scaffolded by/);
+});
+
+test('check reports scaffold/engine version drift without failing', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.version = '0.0.1';
+  await writeFile(markerPath, JSON.stringify(marker));
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /scaffolded by v0\.0\.1, engine v/);
+  const json = JSON.parse((await i2p(['check', '--json'], { cwd: projectDir })).stdout);
+  assert.equal(json.scaffoldVersion, '0.0.1');
+});
+
+test('map lists code files with LOC and exports', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
+  const { stdout } = await i2p(['map'], { cwd: projectDir });
+  assert.match(stdout, /map — 5 code files/);
+  assert.match(stdout, /server\.mjs.*→.*start/);
+  assert.match(stdout, /routes\/todos\.mjs.*→.*default/);
+});
+
+test('check fails cleanly on a syntax error', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await writeFile(join(projectDir, 'broken.mjs'), 'syntax error here({\n');
+  await assert.rejects(
+    i2p(['check'], { cwd: projectDir }),
+    (err) => {
+      assert.match(err.stdout, /FAIL/);
+      assert.match(err.stdout, /syntax\s+FAIL/);
+      return true;
+    },
+  );
 });
 
 test('verify judges a foreign (non-scaffolded) project from another cwd', async (t) => {
@@ -88,19 +150,25 @@ test('verify judges a foreign (non-scaffolded) project from another cwd', async 
   assert.match(res.stdout, /1 tests? passed/);
 });
 
-test('check fails cleanly on a syntax error', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-broken-'));
+test('verify boots a foreign project that serves only a static root (no /api/health)', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-foreign2-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  await writeFile(join(dir, 'app', 'broken.mjs'), 'syntax error here({\n');
-  await assert.rejects(
-    i2p(['check'], { cwd: join(dir, 'app') }),
-    (err) => {
-      assert.match(err.stdout, /FAIL/);
-      assert.match(err.stdout, /syntax\s+FAIL/);
-      return true;
-    },
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => {\n' +
+      '    if (req.url === "/api/health") { res.writeHead(404); return res.end(); }\n' +
+      '    res.writeHead(200, { "Content-Type": "text/html" }); res.end("<h1>hi</h1>");\n' +
+      '  });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ server, port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
   );
+  await writeFile(join(dir, 'tests', 'smoke.test.mjs'), "import test from 'node:test';\ntest('ok', () => {});\n");
+  const { stdout } = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /GET \/api\/health -> 404, GET \/ -> 200/);
 });
 
 test('new refuses to overwrite a non-empty directory', async (t) => {
@@ -112,55 +180,6 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
     i2p(['new', 'app', '--template', 'web'], { cwd: dir }),
     (err) => /never overwrites/.test(err.stderr),
   );
-});
-
-test('scaffolds the worker template and passes check', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-worker-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'jobs', '--template', 'worker'], { cwd: dir });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'jobs') });
-  assert.match(stdout, /PASS \(2\/3 passed\)/);
-  assert.match(stdout, /3 tests passed/);
-  assert.match(stdout, /no server\.mjs/);
-});
-
-test('scaffolds the library template and passes check with an import smoke test', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-lib-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'lib', '--template', 'library', '--name', 'My Lib', '--idea', 'state helpers'], { cwd: dir });
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'lib') });
-  assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /boot\s+PASS/);
-  assert.match(stdout, /index\.mjs loads/);
-  assert.match(stdout, /createStore, memoAsync/);
-  // fresh scaffold matches the engine version — no drift note expected
-  assert.doesNotMatch(stdout, /note\s+scaffolded by/);
-});
-
-test('check reports scaffold/engine version drift without failing', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-drift-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  const markerPath = join(dir, 'app', '.idea2prototype.json');
-  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
-  marker.version = '0.0.1';
-  await writeFile(markerPath, JSON.stringify(marker));
-  const { stdout } = await i2p(['check'], { cwd: join(dir, 'app') });
-  assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /scaffolded by v0\.0\.1, engine v/);
-  const json = JSON.parse((await i2p(['check', '--json'], { cwd: join(dir, 'app') })).stdout);
-  assert.equal(json.scaffoldVersion, '0.0.1');
-});
-
-test('map lists code files with LOC and exports', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'i2p-map-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await i2p(['new', 'app', '--template', 'web'], { cwd: dir });
-  await i2p(['add', 'api-crud', '--resource', 'todos'], { cwd: join(dir, 'app') });
-  const { stdout } = await i2p(['map'], { cwd: join(dir, 'app') });
-  assert.match(stdout, /map — 5 code files/);
-  assert.match(stdout, /server\.mjs.*→.*start/);
-  assert.match(stdout, /routes\/todos\.mjs.*→.*default/);
 });
 
 test('npm bin shim runs the engine', async () => {
