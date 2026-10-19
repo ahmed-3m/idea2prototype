@@ -72,4 +72,6 @@ automated tests, finish only when it works end to end. When finished reply
 with DONE and instructions to run it."*
 
 Judge: `i2p verify <dir>` on both arms (v0.5.1+), plus the spec-1 rubric
-exercised over HTTP (add/complete/delete/restart-persist).
+exercised over HTTP (add/complete/delete/restart-persist) — the exact judge
+script is committed at [`benchmarks/judge-spec1.mjs`](../../judge-spec1.mjs)
+(`node benchmarks/judge-spec1.mjs <projectDir> <port>`).
