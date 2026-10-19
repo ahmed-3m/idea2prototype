@@ -14,7 +14,7 @@
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const VERSION = '0.6.0';
@@ -246,17 +246,47 @@ async function runChecks(projectDir, asJson) {
 }
 
 async function stepSyntax(projectDir) {
-  const files = await collectNodeFiles(projectDir);
+  const serverFiles = await collectNodeFiles(projectDir);
+  const frontendFiles = await collectFrontendFiles(projectDir);
   const failures = [];
-  for (const file of files) {
+  for (const file of serverFiles) {
     const res = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
     if (res.status !== 0) {
       failures.push(firstMeaningfulLine(res.stderr || res.stdout));
     }
   }
+  for (const file of frontendFiles) {
+    const source = (await readFile(file, 'utf8')).replace(/^\uFEFF/, '');
+    if (!parsesClean(source, 'module') && !parsesClean(source, 'commonjs')) {
+      const rel = relative(projectDir, file).split(sep).join('/');
+      failures.push(`${rel}: does not parse as ESM or classic script`);
+    }
+  }
+  const total = serverFiles.length + frontendFiles.length;
+  const detail = failures.length
+    ? `${failures.length}/${total} files invalid`
+    : frontendFiles.length
+      ? `${total} files parse clean (${serverFiles.length} server + ${frontendFiles.length} frontend)`
+      : `${serverFiles.length} files parse clean`;
   return failures.length
-    ? { name: 'syntax', status: 'fail', detail: `${failures.length}/${files.length} files invalid`, notes: failures.slice(0, 3) }
-    : { name: 'syntax', status: 'pass', detail: `${files.length} files parse clean` };
+    ? { name: 'syntax', status: 'fail', detail, notes: failures.slice(0, 3) }
+    : { name: 'syntax', status: 'pass', detail };
+}
+
+// Browser JS can't take the plain `node --check <file>` path: an .js file
+// with import/export parses as CommonJS and "fails" on Node < 22. Parse via
+// stdin in BOTH modes instead — only code broken in each mode fails.
+function parsesClean(source, inputType) {
+  const res = spawnSync(process.execPath, ['--check', `--input-type=${inputType}`], {
+    input: source,
+    encoding: 'utf8',
+    // 16 MiB matches stepTests. The default 1 MiB ENOBUFSs on parse errors in
+    // big single-line (minified) files — status becomes null; a bumped buffer
+    // keeps status meaningful. No error special-case: server-file parses treat
+    // a null status as failure, and so does this.
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return res.status === 0;
 }
 
 async function stepTests(projectDir, syntaxPassed) {
@@ -524,6 +554,26 @@ async function collectNodeFiles(root) {
     }
   }
   await walk(root);
+  return out;
+}
+
+// public/ is browser territory — collectNodeFiles skips it on purpose because
+// frontend .js must NOT have to parse under Node's file-based CJS rules.
+// The dual-parse syntax step checks these separately (#17).
+async function collectFrontendFiles(projectDir) {
+  const publicDir = join(projectDir, 'public');
+  if (!existsSync(publicDir)) return [];
+  const skip = new Set(['node_modules', '.git']);
+  const out = [];
+  async function walk(dir) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (skip.has(entry.name)) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith('.js')) out.push(full);
+    }
+  }
+  await walk(publicDir);
   return out;
 }
 
