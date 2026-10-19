@@ -195,3 +195,88 @@ test('list shows templates and features', async () => {
     assert.match(stdout, new RegExp(`\\b${name}\\b`));
   }
 });
+
+test('check returns promptly — no lingering timeout timer', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const started = Date.now();
+  await i2p(['check'], { cwd: projectDir });
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 10_000, `check took ${elapsed}ms — a leaked withTimeout timer adds ~15s of dead time`);
+});
+
+test('user uploads are never syntax-checked', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'upload' });
+  await mkdir(join(projectDir, 'uploads'), { recursive: true });
+  await writeFile(join(projectDir, 'uploads', 'junk.js'), 'this is not javascript\n');
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+});
+
+test('add rejects features that do not apply to the template', async (t) => {
+  const projectDir = await scaffold(t, { template: 'cli' });
+  await assert.rejects(
+    i2p(['add', 'auth-local'], { cwd: projectDir }),
+    (err) => /applies to web\/api/.test(err.stderr),
+  );
+});
+
+test('verify does not follow redirects off the probe target', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-redirect-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => {\n' +
+      '    res.writeHead(302, { Location: "http://127.0.0.1:9/" }); res.end();\n' +
+      '  });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ server, port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'tests', 'smoke.test.mjs'), "import test from 'node:test';\ntest('ok', () => {});\n");
+  const { stdout } = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /GET \/api\/health -> 302/);
+});
+
+test('boot is skipped with a clear reason when tests fail', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await writeFile(
+    join(projectDir, 'tests', 'zz-regression.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('deliberate failure', () => assert.equal(1, 2));\n",
+  );
+  await assert.rejects(
+    i2p(['check'], { cwd: projectDir }),
+    (err) => {
+      assert.match(err.stdout, /tests\s+FAIL/);
+      assert.match(err.stdout, /boot\s+SKIP/);
+      assert.match(err.stdout, /skipped \(tests failed\)/);
+      return true;
+    },
+  );
+});
+
+test('--json output is well-formed for check, map, and verify', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const check = JSON.parse((await i2p(['check', '--json'], { cwd: projectDir })).stdout);
+  assert.equal(check.tool, 'idea2prototype');
+  assert.equal(check.status, 'PASS');
+  assert.deepEqual(check.steps.map((s) => s.name), ['syntax', 'tests', 'boot']);
+
+  const map = JSON.parse((await i2p(['map', '--json'], { cwd: projectDir })).stdout);
+  assert.ok(map.files.length > 0);
+  assert.ok(map.files.every((f) => typeof f.path === 'string' && typeof f.loc === 'number'));
+
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-json-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(join(dir, 'x.mjs'), 'export const one = 1;\n');
+  await writeFile(
+    join(dir, 'tests', 'x.test.mjs'),
+    "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { one } from '../x.mjs';\ntest('one', () => assert.equal(one, 1));\n",
+  );
+  const verify = JSON.parse((await i2p(['verify', dir, '--json'], { cwd: HERE })).stdout);
+  assert.equal(verify.status, 'PASS');
+  assert.ok(!('scaffoldVersion' in verify)); // foreign project: no scaffold version in JSON
+});
