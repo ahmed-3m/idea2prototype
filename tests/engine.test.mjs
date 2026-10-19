@@ -108,6 +108,92 @@ test('add auth-local passes check twice in a row (re-check loop)', async (t) => 
   assert.match(second.stdout, /4 tests passed/);
 });
 
+// Pins #19's composition story: stacking several features (auth + two CRUD
+// resources + rate-limit) on one scaffold must stay green out of the box.
+test('stacking multiple features keeps the project green', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await i2p(['add', 'auth-local'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'posts'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'comments'], { cwd: projectDir });
+  await i2p(['add', 'rate-limit'], { cwd: projectDir });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /10 tests passed/); // 3 web + 1 auth + 2+2 crud + 2 rate-limit
+});
+
+// Executes the SKILL.md "Composing features" worked example literally:
+// requireAuth-wrapped POST + author stamp + session-bootstrapped tests. If
+// the documented steps drift from what the templates generate, this goes red.
+test('documented auth x crud composition works end to end', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await i2p(['add', 'auth-local'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'posts'], { cwd: projectDir });
+
+  // Step 1-2 of the docs: wrap the generated POST with requireAuth + stamp author.
+  const routePath = join(projectDir, 'routes', 'posts.mjs');
+  let route = await readFile(routePath, 'utf8');
+  assert.match(route, /POST: async \(\{ body \}\) => \{/); // guard: template shape changed
+  route = route
+    .replace(
+      "import { randomUUID } from 'node:crypto';",
+      "import { randomUUID } from 'node:crypto';\nimport { requireAuth } from './auth.mjs';",
+    )
+    .replace('POST: async ({ body }) => {', 'POST: requireAuth(async ({ body, user }) => {')
+    .replace(
+      'const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body };',
+      'const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body, author: user.username };',
+    )
+    .replace(/return \[201, item\];\r?\n      \},/, 'return [201, item];\n      }),');
+  await writeFile(routePath, route);
+
+  // Step 3 of the docs: session-bootstrap BOTH generated POSTs.
+  await writeFile(
+    join(projectDir, 'tests', 'posts.test.mjs'),
+    "import test from 'node:test';\n" +
+      "import assert from 'node:assert/strict';\n" +
+      "import { start } from '../server.mjs';\n" +
+      '\n' +
+      "const JSON_HEADERS = { 'content-type': 'application/json' };\n" +
+      'async function session(root) {\n' +
+      "  const username = `author_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;\n" +
+      '  await fetch(`${root}/api/auth/register`, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ username, password: \'correct horse battery\' }) });\n' +
+      '  const login = await fetch(`${root}/api/auth/login`, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ username, password: \'correct horse battery\' }) });\n' +
+      "  return { cookie: login.headers.get('set-cookie').split(';')[0], username };\n" +
+      '}\n' +
+      '\n' +
+      "test('protected posts: anon 401, authed 201 + author stamp', async () => {\n" +
+      '  const app = await start(0);\n' +
+      '  const root = `http://127.0.0.1:${app.port}`;\n' +
+      '  const base = `${root}/api/posts`;\n' +
+      '  try {\n' +
+      '    const { cookie, username } = await session(root);\n' +
+      '    const anon = await fetch(base, { method: \'POST\', headers: JSON_HEADERS, body: JSON.stringify({ title: \'anon\' }) });\n' +
+      '    assert.equal(anon.status, 401);\n' +
+      '    const created = await fetch(base, { method: \'POST\', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify({ title: \'first\' }) });\n' +
+      '    assert.equal(created.status, 201);\n' +
+      '    assert.equal((await created.json()).author, username);\n' +
+      '  } finally { await app.close(); }\n' +
+      '});\n' +
+      '\n' +
+      "test('protected posts: non-object body still 400 with a session', async () => {\n" +
+      '  const app = await start(0);\n' +
+      '  const root = `http://127.0.0.1:${app.port}`;\n' +
+      '  try {\n' +
+      '    const { cookie } = await session(root);\n' +
+      '    const res = await fetch(`${root}/api/posts`, { method: \'POST\', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify([\'nope\']) });\n' +
+      '    assert.equal(res.status, 400);\n' +
+      '  } finally { await app.close(); }\n' +
+      '});\n',
+  );
+
+  const first = await i2p(['check'], { cwd: projectDir });
+  assert.match(first.stdout, /PASS \(3\/3 passed\)/);
+  assert.match(first.stdout, /6 tests passed/); // 3 web + 1 auth + 2 protected posts
+  // The unique-username pattern must also survive a re-check (data persists).
+  const second = await i2p(['check'], { cwd: projectDir });
+  assert.match(second.stdout, /PASS \(3\/3 passed\)/);
+});
+
 test('add upload keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'upload' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });

@@ -76,6 +76,23 @@ It is also mirrored on the GitHub Packages registry as `@ahmed-3m/idea2prototype
 
 **Make any agent use it:** copy [`agents/AGENTS.md`](agents/AGENTS.md) (or `agents/CLAUDE.md`) into your project — it teaches the agent the commands and the token-discipline workflow. Point your agent at this README and it has everything it needs.
 
+## Composing features
+
+Features compose by wrapping handlers. `add` generates each feature standalone; connecting them is a small edit to files the tool generated once and now considers yours (`routes/*.mjs`, `tests/*.mjs`). The canonical example — only logged-in users may create posts, author stamped on the item:
+
+```js
+// routes/posts.mjs (after `add auth-local` + `add api-crud --resource posts`)
+import { requireAuth } from './auth.mjs';
+
+POST: requireAuth(async ({ body, user }) => {
+  // ...original handler body...
+  const item = { id, createdAt, ...body, author: user.username };
+  // ...persist and return [201, item]...
+}),
+```
+
+The generated CRUD test then needs a session instead of anonymous POSTs — register + login once, pass the cookie on protected calls (unique username per run; `data/users.json` persists). The full worked example, including the session-bootstrap test pattern, lives in the skill's [`SKILL.md`](skills/idea2prototype/SKILL.md) under "Composing features". `rateLimit()` and `cors()` wrap handlers the same way and nest with `requireAuth`.
+
 ## How it compares
 
 | | Idea2Prototype | bolt.diy / dyad | OpenHands / Cline |
