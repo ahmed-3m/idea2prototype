@@ -18,7 +18,7 @@ Pre-registered rubric (written BEFORE either arm ran): `c1 starts per own docs �
 
 1. **Builder was the orchestrator session, not fresh subagent sessions** — the Agent tool failed its 8th consecutive attempt this account ("No reasoning level selected"); falling back to sequential in-session builds keeps the within-subject pairing (same builder, same context warmth) but weakens the fresh-session control.
 2. **Token usage not recorded** (no subagent accounting; in-session token counts are not attributable per arm) — RQ1 untested this run.
-3. **Functional judge knew the arms** (same session) — mitigations: rubric pre-registered before builds, criteria checked mechanically over live HTTP on both arms, and the objective verifier (`i2p verify`, arm-blind by construction) is the primary reliability metric. Dirs were still renamed `run-<hash>`-style during judging for form.
+3. **Functional judge knew the arms** (same session, dirs judged in place — NOT renamed) — mitigations: rubric pre-registered before builds and criteria checked mechanically over live HTTP on both arms; arm-blindness holds only for the objective verifier (`i2p verify`, the primary reliability metric).
 4. Machine not perfectly idle (orchestrator live) — wall-clock figures are bounds reconstructed from unix timestamps and file mtimes, rounded honestly.
 
 ## Reproduce
