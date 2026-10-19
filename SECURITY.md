@@ -30,6 +30,10 @@ bugs ship with every scaffold.
 - `auth-local` is a prototype-grade account system (scrypt + HMAC-signed
   cookies). It is deliberately simple; do not treat it as hardened
   production auth.
+- JSON-file persistence (`api-crud` stores, `auth-local` users, the worker
+  queue) is single-process: an in-memory cache rewrites the whole file per
+  change, so concurrent writers (multiple processes) would corrupt it. Fine
+  for prototypes; do not run scaled instances against one data dir.
 - `upload` enforces a 5MB cap and path-traversal guards, but performs no
   content-type sniffing or virus scanning.
 - The scaffolds bind to loopback by default; exposing them to a network is

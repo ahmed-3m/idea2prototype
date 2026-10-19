@@ -85,6 +85,16 @@ test('add cors keeps the web project green', async (t) => {
   assert.match(stdout, /6 tests passed/); // 3 web + 3 cors
 });
 
+// #20: the rate-limit/cors add summaries must tell the agent the demo route
+// is disposable — otherwise /api/ping clutter stays on the real API surface.
+test('demo-route features warn that their demo route is disposable', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const rl = await i2p(['add', 'rate-limit'], { cwd: projectDir });
+  assert.match(rl.stdout, /demo route: delete GET \/api\/ping from routes\/ratelimit\.mjs/);
+  const cors = await i2p(['add', 'cors'], { cwd: projectDir });
+  assert.match(cors.stdout, /demo route: delete GET \/api\/cors-ping from routes\/cors\.mjs/);
+});
+
 test('scaffolds the api template and passes check', async (t) => {
   const projectDir = await scaffold(t, { template: 'api' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
