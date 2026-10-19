@@ -89,6 +89,11 @@ Two independent layers, applied **identically to both arms**:
 
 | Date | Agent + model | Arm | Σ tokens (in/out) | Σ wall-clock | Verifier pass | Judge score |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
+| 2026-10-18 | ZCode / GLM-5.3 | spec 1 control | n/a (in-session) | 341s | PASS 3/3 | 5/5 |
+| 2026-10-18 | ZCode / GLM-5.3 | spec 1 treatment | n/a (in-session) | 104s | PASS 3/3 | 5/5 |
+| 2026-10-19 | ZCode / GLM-5.3 | spec 2 control | n/a (in-session) | ~39s (incl. test-runner compat fix) | PASS 3/3 | 5/5 |
+| 2026-10-19 | ZCode / GLM-5.3 | spec 2 treatment | n/a (in-session) | ~41s (~24s scaffold→PASS) | PASS 3/3 | 5/5 |
+
+Run details + deviations: `benchmarks/runs/` (spec-1 paired NOTES; spec-2 paired NOTES). Both spec-2 arms functionally identical (5/5); treatment wrote 23% fewer hand-written LOC with 2× tests and zero runner-compat failures — control's from-scratch `npm test` broke on Node 24/Windows.
 
 Submit results as PRs editing this table; include raw transcripts when possible.
