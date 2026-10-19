@@ -12,6 +12,10 @@ function firstCookie(res) {
 test('auth-local full session flow', async () => {
   const app = await start(0);
   const base = `http://127.0.0.1:${app.port}`;
+  // Unique identity per run: data/users.json persists between `check` runs,
+  // so a fixed username would 409 on the second run. Keep it <= 32 chars
+  // (route-side username validation).
+  const username = `alice_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   try {
     const badRegister = await fetch(`${base}/api/auth/register`, {
       method: 'POST',
@@ -23,21 +27,21 @@ test('auth-local full session flow', async () => {
     const register = await fetch(`${base}/api/auth/register`, {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ username: 'alice', password: 'correct horse battery' }),
+      body: JSON.stringify({ username, password: 'correct horse battery' }),
     });
     assert.equal(register.status, 201);
 
     const duplicate = await fetch(`${base}/api/auth/register`, {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ username: 'alice', password: 'another password' }),
+      body: JSON.stringify({ username, password: 'another password' }),
     });
     assert.equal(duplicate.status, 409);
 
     const wrongLogin = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ username: 'alice', password: 'wrong password!' }),
+      body: JSON.stringify({ username, password: 'wrong password!' }),
     });
     assert.equal(wrongLogin.status, 401);
 
@@ -47,7 +51,7 @@ test('auth-local full session flow', async () => {
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ username: 'alice', password: 'correct horse battery' }),
+      body: JSON.stringify({ username, password: 'correct horse battery' }),
     });
     assert.equal(login.status, 200);
     const cookie = firstCookie(login);
@@ -55,7 +59,7 @@ test('auth-local full session flow', async () => {
 
     const me = await fetch(`${base}/api/auth/me`, { headers: { cookie } });
     assert.equal(me.status, 200);
-    assert.equal((await me.json()).username, 'alice');
+    assert.equal((await me.json()).username, username);
 
     const tampered = await fetch(`${base}/api/auth/me`, { headers: { cookie: `${cookie}x` } });
     assert.equal(tampered.status, 401);
