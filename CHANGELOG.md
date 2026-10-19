@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+Fixes for all five findings of the 2026-10-19 complex-task stress test (#16–#20):
+
+- Fix (#16): `auth-local`'s generated test registers a unique user per run — the fixed username `alice` 409'd on the second `npm run check` because `data/users.json` persists across runs; the re-check loop is now pinned by an engine test that checks the same project twice.
+- Fix (#17): the syntax step now covers `public/*.js`. Each frontend file is parsed via stdin as both ESM and classic script — only code broken in both modes fails, so sloppy-mode classic scripts pass and browser ESM works on every supported Node (no version split). Detail line names its coverage: `3 files parse clean (2 server + 1 frontend)`. Large-file parse errors handled with a 16 MiB buffer (review-hardened).
+- Fix (#18): the boot probe also asks `GET /` after the health contract — a 5xx root fails boot, so a server whose every real route 500s no longer verifies PASS 3/3; 4xx roots (API-only projects) stay in the ok-range; symmetric for scaffolded and foreign projects; `judge-spec1.mjs` untouched (frozen).
+- Docs (#19): "Composing features" section in SKILL.md + README with the worked auth×crud example (`requireAuth` route wrap with author stamp + session-bootstrap test pattern), executed end-to-end and pinned by an engine test that follows the documented steps literally; rule 2 reworded — "never hand-write what `add` can generate; hand-edits are yours to keep"; multi-feature stacking pinned by test (auth + api-crud×2 + rate-limit → PASS).
+- Minor (#20): single-process persistence note in SECURITY.md; `rate-limit`/`cors` add summaries state the demo route is disposable (pinned by test); optional `## Modules` section in all 5 PROTOTYPE.md stubs; cross-template boundary documented — features compose within a template, templates do not compose with each other.
+- Tests: engine+consistency suite 29 → 38 — re-check loop, broken/classic/large frontend files, 500-root and API-only boot probes, feature stacking, documented composition, demo-route warnings.
+
 ## 0.6.0
 
 - Feature: `add cors` — Cross-Origin Resource Sharing wrapper (`cors({ origin, methods, headers, maxAge, credentials })`) in the rateLimit() pattern: OPTIONS preflights answered 204 + CORS headers without invoking the handler, `access-control-*` headers merged into every response, origin allowlists with matched-origin reflection; `GET/OPTIONS /api/cors-ping` demo + tests.
