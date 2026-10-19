@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+- Fix: `check`/`verify` lingered ~15s after the verdict — `withTimeout`'s timer was never cleared (web check 15.7s → 0.69s wall-clock; full engine suite minutes → ~11s).
+- Fix: the booted server is closed even when a probe fails — a dropped connection used to leave a leaked listener that hung `check` indefinitely.
+- Fix: `uploads/` is excluded from the syntax step (matching `map`) — user uploads can no longer fail `check`; an ESM `.js` upload was a CommonJS SyntaxError under `node --check` on Node 18.
+- Test: automated version-consistency guard in CI — engine/package/plugin/template-marker versions, the CHANGELOG section, and the npm files manifest are asserted in one place; version drift is now a failing check, not a manual 8-field checklist.
+- Tests: regression coverage for redirect probes, the tests-failed boot skip, `add` template applicability, uploads isolation, prompt check return, and `--json` output shapes.
+- Docs: quickstart works from a clean clone today (npm `npx` form preserved under "once published"); `agents/` ships in the npm tarball; `agents/CLAUDE.md` title fixed; `help()` documents `version`.
+- Repo: `main` is branch-protected — all 6 CI legs required before merge, force-pushes disabled, admins included.
+
 ## 0.5.1
 
 - Verifier fairness fix (found by the first control-arm benchmark run): `verify`'s boot probe required `/api/health` — a route only this tool's own templates ship. Boot now falls back to `GET /` when health returns 404 and accepts any 2xx/redirect, so foreign projects that never heard of our health route are judged on whether they start and serve, not on our template's DNA.
