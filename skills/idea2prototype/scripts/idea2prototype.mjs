@@ -280,6 +280,11 @@ function parsesClean(source, inputType) {
   const res = spawnSync(process.execPath, ['--check', `--input-type=${inputType}`], {
     input: source,
     encoding: 'utf8',
+    // 16 MiB matches stepTests. The default 1 MiB ENOBUFSs on parse errors in
+    // big single-line (minified) files — status becomes null; a bumped buffer
+    // keeps status meaningful. No error special-case: server-file parses treat
+    // a null status as failure, and so does this.
+    maxBuffer: 16 * 1024 * 1024,
   });
   return res.status === 0;
 }
