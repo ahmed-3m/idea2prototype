@@ -122,6 +122,13 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (err) {
+      // Streaming handlers may have sent headers before throwing — sendJson
+      // would then throw ERR_HTTP_HEADERS_SENT inside this catch and crash
+      // the process. Kill the socket instead; the response is already broken.
+      if (res.headersSent || res.writableEnded) {
+        res.destroy();
+        return;
+      }
       return sendJson(res, 500, { error: String(err?.message ?? err) });
     }
   });

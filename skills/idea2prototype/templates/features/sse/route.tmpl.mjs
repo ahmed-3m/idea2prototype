@@ -5,8 +5,8 @@
 //
 // The pattern to keep when you wire real events:
 //   1. writeHead the SSE headers, 2. send an initial event, 3. setInterval
-//   heartbeats, 4. clearInterval on req 'close' — the timer keeps the Node
-//   event loop alive, so a stream that never clears it hangs the process.
+//   heartbeats, 4. clearInterval on close — the timer keeps the Node event
+//   loop alive, so a stream that never clears it hangs the process.
 
 // Demo stream so the effect is observable right after `add sse`.
 // Replace the payload with your own events (or delete this route and its
@@ -15,11 +15,18 @@ const events = {
   path: '/api/events',
   methods: {
     GET: async ({ req, res }) => {
+      // Client may have aborted before dispatch — writing would emit an
+      // unhandled stream error and the close event already fired.
+      if (req.destroyed || res.destroyed) return;
       res.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
+        'content-type': 'text/event-stream', // SSE is UTF-8 by spec — no charset param
         'cache-control': 'no-cache',
+        connection: 'keep-alive',
       });
-      const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const send = (event, data) => {
+        if (res.writableEnded || res.destroyed) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
       send('connected', { at: new Date().toISOString() });
       let beats = 0;
       const timer = setInterval(
@@ -28,7 +35,11 @@ const events = {
       );
       // Fires when the client disconnects OR when app.close() calls
       // closeAllConnections() — either way the heartbeat timer must die.
-      req.on('close', () => clearInterval(timer));
+      // Listen on both: req close covers request teardown, res close the
+      // response stream (whichever fires first wins; clearInterval is idempotent).
+      const cleanup = () => clearInterval(timer);
+      req.on('close', cleanup);
+      res.on('close', cleanup);
       // intentional no-return: the response IS the open stream
     },
   },

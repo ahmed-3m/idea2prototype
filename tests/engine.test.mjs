@@ -229,6 +229,7 @@ test('add sse keeps the api project green', async (t) => {
   const projectDir = await scaffold(t, { template: 'api', feature: 'sse' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /4 tests passed/); // 3 api + 1 sse stream
 });
 
 // Pins the streaming-contract guard from the non-streaming side: a handler
@@ -239,7 +240,25 @@ test('handler returning nothing yields a clean 500 (stream contract)', async (t)
   await mkdir(join(projectDir, 'routes'), { recursive: true });
   await writeFile(
     join(projectDir, 'routes', 'broken.mjs'),
-    'export default [{ path: "/api/broken", methods: { GET: async () => {} } }];\n',
+    [
+      'export default [',
+      '  { path: "/api/broken", methods: { GET: async () => {} } },',
+      '  {',
+      '    path: "/api/throw-after-headers",',
+      '    methods: {',
+      '      // streaming shape: headers sent, then the handler blows up — the',
+      '      // outer catch must kill the socket, NOT call sendJson (which would',
+      '      // throw ERR_HTTP_HEADERS_SENT inside the catch and crash the server)',
+      '      GET: async ({ res }) => {',
+      '        res.writeHead(200, { "content-type": "text/event-stream" });',
+      '        res.write("event: boom\\n\\n");',
+      '        throw new Error("mid-stream failure");',
+      '      },',
+      '    },',
+      '  },',
+      '];',
+      '',
+    ].join('\n'),
   );
   await writeFile(
     join(projectDir, 'tests', 'broken.test.mjs'),
@@ -254,6 +273,19 @@ test('GET /api/broken -> 500 JSON error, server stays up', async () => {
     assert.equal(res.status, 500);
     assert.ok((await res.json()).error);
     const health = await fetch(\`http://127.0.0.1:\${app.port}/api/health\`);
+    assert.equal(health.status, 200);
+  } finally { await app.close(); }
+});
+
+test('handler throwing AFTER headers: connection breaks, server survives', async () => {
+  const app = await start(0);
+  const root = \`http://127.0.0.1:\${app.port}\`;
+  try {
+    // Race-tolerant: headers may reach the client before the server kills
+    // the socket — either the fetch itself rejects, or the body read does.
+    const res = await fetch(\`\${root}/api/throw-after-headers\`).catch(() => null);
+    if (res) await assert.rejects(res.text(), /terminated|abort|socket|fetch failed/i);
+    const health = await fetch(\`\${root}/api/health\`);
     assert.equal(health.status, 200);
   } finally { await app.close(); }
 });
