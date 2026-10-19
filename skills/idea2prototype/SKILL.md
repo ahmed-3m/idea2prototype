@@ -59,19 +59,21 @@ POST: requireAuth(async ({ body, user }) => {
 
 `requireAuth` rejects anonymous requests with 401 and provides `ctx.user` (`{ username }`) to the wrapped handler. `rateLimit(...)` from `add rate-limit` and `cors(...)` from `add cors` wrap handlers the same way — compose them by nesting.
 
-3. Fix the generated test: it POSTs without a session and now gets 401. Bootstrap a session instead of rewriting the whole file — register + login once, pass the cookie on protected calls (use a unique username per run; `data/users.json` persists between checks):
+3. Fix the generated test: BOTH of its POSTs (`posts CRUD roundtrip` and `posts rejects non-object bodies`) go out anonymously and now get 401. Bootstrap a session once and pass the cookie on every protected call. Note the helper takes the SERVER ROOT — the test's existing `base` variable points at `/api/posts`, so build a separate origin string (register/login live at `/api/auth/*`):
 
 ```js
 const JSON_HEADERS = { 'content-type': 'application/json' };
-async function sessionCookie(base) {
+async function session(root) {
   const username = `author_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-  await fetch(`${base}/api/auth/register`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
-  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
-  return login.headers.get('set-cookie').split(';')[0];
+  await fetch(`${root}/api/auth/register`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  const login = await fetch(`${root}/api/auth/login`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, password: 'correct horse battery' }) });
+  return { cookie: login.headers.get('set-cookie').split(';')[0], username };
 }
 
-// in the test: const cookie = await sessionCookie(base);
-// const res = await fetch(`${base}/api/posts`, { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: ... });
+// inside a test (root = `http://127.0.0.1:${app.port}` — NOT the /api/posts base):
+// const { cookie, username } = await session(root);
+// const res = await fetch(base, { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: ... });
+// anonymous POSTs still assert 401; authed POSTs assert 201 and item.author === username
 ```
 
 Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite must all pass.
