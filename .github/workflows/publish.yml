@@ -1,0 +1,42 @@
+# Publishes the package to the GitHub Packages npm registry (npm.pkg.github.com)
+# whenever a release is published. The built-in GITHUB_TOKEN does the auth —
+# no secrets required. npmjs.com publishing is NOT handled here (needs NPM_TOKEN,
+# pending); this channel carries the scoped name @ahmed-3m/idea2prototype
+# because GitHub Packages hosts scoped names only.
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  github-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+
+      - name: Guard - tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Publish (renamed to the required scope)
+        run: |
+          npm pkg set name="@ahmed-3m/idea2prototype"
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
