@@ -20,10 +20,12 @@ test('GET /api/events streams: SSE headers + a readable first event', async () =
     reader = res.body.getReader();
     // Chunk boundaries do not line up with event boundaries — accumulate
     // until the first complete frame (delimited by a blank line) arrives.
+    const decoder = new TextDecoder();
     let text = '';
     while (!text.includes('\n\n')) {
-      const { value } = await reader.read();
-      text += new TextDecoder().decode(value);
+      const { value, done } = await reader.read();
+      if (done) break; // a closed stream must fail the assertion, not spin forever
+      text += decoder.decode(value, { stream: true });
     }
     assert.match(text, /event: connected/);
     assert.match(text, /data: \{/);
