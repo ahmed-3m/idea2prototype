@@ -18,6 +18,7 @@
   },
   "files": [
     "bin/",
+    "agents/",
     "skills/idea2prototype/SKILL.md",
     "skills/idea2prototype/scripts/",
     "skills/idea2prototype/templates/",
