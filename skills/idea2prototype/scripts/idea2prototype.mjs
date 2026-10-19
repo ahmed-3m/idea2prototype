@@ -332,7 +332,10 @@ async function stepBoot(projectDir, testsPassed, marker) {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
     }
     const app = await withTimeout(mod.start(0), 10_000, 'server start');
-    const probe = async (path) => withTimeout(fetch(`http://127.0.0.1:${app.port}${path}`), 10_000, `${path} request`);
+    // redirect: 'manual' — never follow a redirect off the probe target; the
+    // 3xx itself counts as serving (foreign ok-range is 200–399).
+    const probe = async (path) =>
+      withTimeout(fetch(`http://127.0.0.1:${app.port}${path}`, { redirect: 'manual' }), 10_000, `${path} request`);
     let res = await probe('/api/health');
     let detail = `GET /api/health -> ${res.status}`;
     // Foreign projects (verify mode) may not implement our template's health
