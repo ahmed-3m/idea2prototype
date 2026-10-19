@@ -117,6 +117,8 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 
 One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-based check arrives with the npm package.
 
+Another boundary worth naming: templates are single-purpose. A task needing a web app **and** background jobs scaffolds as `web` and hand-builds the job-queue part (or vice versa) — features compose within a template (auth × CRUD, rate-limit, cors), but templates do not compose with each other. A future `add worker`-style feature could close this; today the boundary is deliberate and documented.
+
 ## Contributing
 
 New templates and features are exactly two template files + one registry entry — see [CONTRIBUTING.md](CONTRIBUTING.md). The engine suite (`node --test "tests/*.test.mjs"`) runs on ubuntu/windows across Node 18/22/24 in CI and must stay green. `AGENTS.md` documents the architecture for humans and coding agents alike.

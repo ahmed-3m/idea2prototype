@@ -127,6 +127,7 @@ const FEATURES = {
       'routes/ratelimit.mjs   rateLimit({ max, windowMs, keyFn }) wrapper + GET /api/ping demo',
       'tests/ratelimit.test.mjs  429 + Retry-After + header + key-isolation cases',
       'wrap handlers: methods: { GET: rateLimit({ max: 10 })(handler) }',
+      'demo route: delete GET /api/ping from routes/ratelimit.mjs (and its test) when done',
     ],
   },
   cors: {
@@ -139,6 +140,7 @@ const FEATURES = {
       'routes/cors.mjs   cors({ origin, methods, credentials }) wrapper + GET /api/cors-ping demo',
       'tests/cors.test.mjs  preflight + allowlist reflection + demo-route cases',
       'wrap handlers: methods: { GET: cors({ origin: ["https://my.app"] })(handler) }',
+      'demo route: delete GET /api/cors-ping from routes/cors.mjs (and its test) when done',
     ],
   },
 };

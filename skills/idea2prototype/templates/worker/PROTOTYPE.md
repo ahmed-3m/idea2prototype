@@ -10,6 +10,11 @@
 <!-- The 1-3 job types this worker must handle well. -->
 1.
 
+## Modules (optional)
+<!-- For multi-feature prototypes: one line per module — what it owns, where it
+     lives. Skip this section entirely for small builds. -->
+-
+
 ## Out of scope
 <!-- Explicitly postponed, so the build stays a prototype. -->
 -
