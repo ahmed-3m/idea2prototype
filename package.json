@@ -1,6 +1,6 @@
 {
   "name": "idea2prototype",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
   "type": "module",
   "license": "MIT",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- Feature: `add sse` — Server-Sent Events (`GET /api/events`: `text/event-stream`, immediate `connected` event, 1 s heartbeats, cleanup tied to the response stream) and the streaming route contract it introduces: handlers may write chunks directly to `ctx.res` and return nothing — the server leaves the stream open (`headersSent` guard); a handler that throws after sending headers kills the socket instead of crashing the process, and a handler that neither writes nor returns still fails as a clean 500.
+- Benchmark: spec 3 (Markdown notes CLI) paired run archived — both arms verify PASS (serverless projects boot-skip honestly) and judge 5/5 via the new mechanical `judge-spec3.mjs`; the first honest harness loss on speed and hand-written LOC (~16 s vs ~47 s, 129 vs 149 LOC on a micro-CLI — fixed overhead dominates), published as a result per the pre-registered protocol.
+- CI: releases now also publish to npmjs.org — NPM_TOKEN-gated with a visible skip until the secret exists (`--access public`, unconditional tag/version guard, GitHub Packages job on release events only).
+
 ## 0.7.0
 
 Fixes for all five findings of the 2026-10-19 complex-task stress test (#16–#20):
