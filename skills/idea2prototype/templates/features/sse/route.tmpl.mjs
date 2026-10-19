@@ -33,13 +33,12 @@ const events = {
         () => send('heartbeat', { beats: ++beats, at: new Date().toISOString() }),
         1000,
       );
-      // Fires when the client disconnects OR when app.close() calls
-      // closeAllConnections() — either way the heartbeat timer must die.
-      // Listen on both: req close covers request teardown, res close the
-      // response stream (whichever fires first wins; clearInterval is idempotent).
-      const cleanup = () => clearInterval(timer);
-      req.on('close', cleanup);
-      res.on('close', cleanup);
+      // res 'close' fires when the client disconnects OR when app.close()
+      // calls closeAllConnections() — either way the heartbeat timer must die.
+      // Listen on the RESPONSE only: req 'close' can fire when the request
+      // message completes while the SSE response is still open, which would
+      // silence heartbeats on a healthy connection.
+      res.on('close', () => clearInterval(timer));
       // intentional no-return: the response IS the open stream
     },
   },
