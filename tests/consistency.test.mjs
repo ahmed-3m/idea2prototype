@@ -8,7 +8,6 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const readJson = async (p) => JSON.parse(await readFile(p, 'utf8'));
 
