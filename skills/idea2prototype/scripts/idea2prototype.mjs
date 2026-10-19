@@ -248,7 +248,7 @@ async function runChecks(projectDir, asJson) {
 }
 
 async function stepSyntax(projectDir) {
-  const serverFiles = await collectNodeFiles(projectDir);
+  const serverFiles = await collectServerFiles(projectDir);
   const frontendFiles = await collectFrontendFiles(projectDir);
   const failures = [];
   for (const file of serverFiles) {
@@ -265,11 +265,14 @@ async function stepSyntax(projectDir) {
     }
   }
   const total = serverFiles.length + frontendFiles.length;
-  const detail = failures.length
-    ? `${failures.length}/${total} files invalid`
-    : frontendFiles.length
-      ? `${total} files parse clean (${serverFiles.length} server + ${frontendFiles.length} frontend)`
-      : `${serverFiles.length} files parse clean`;
+  let detail;
+  if (failures.length) {
+    detail = `${failures.length}/${total} files invalid`;
+  } else if (frontendFiles.length) {
+    detail = `${total} files parse clean (${serverFiles.length} server + ${frontendFiles.length} frontend)`;
+  } else {
+    detail = `${serverFiles.length} files parse clean`;
+  }
   return failures.length
     ? { name: 'syntax', status: 'fail', detail, notes: failures.slice(0, 3) }
     : { name: 'syntax', status: 'pass', detail };
@@ -558,40 +561,37 @@ async function replacePlaceholders(root, mapping) {
   }
 }
 
-async function collectNodeFiles(root) {
-  const skip = new Set(['node_modules', '.git', 'public', 'data', 'dist', 'coverage', 'uploads']);
+// One canonical walker: collect files under root, skipping skip-set entries,
+// keeping names matching keep(). File-class policies live at the call sites.
+async function collectJsFiles(root, { skip, keep }) {
   const out = [];
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (skip.has(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
-      else if (/\.(mjs|js)$/.test(entry.name) && !entry.name.endsWith('.config.cjs')) out.push(full);
+      else if (keep(entry.name)) out.push(full);
     }
   }
   await walk(root);
   return out;
 }
 
-// public/ is browser territory — collectNodeFiles skips it on purpose because
-// frontend .js must NOT have to parse under Node's file-based CJS rules.
-// The dual-parse syntax step checks these separately (#17).
-async function collectFrontendFiles(projectDir) {
+// Server code must parse under Node's own rules (node --check). public/ is
+// excluded here on purpose: browser ESM in .js must not have to parse as
+// CommonJS — those files get the dual-parse treatment in stepSyntax (#17).
+const SERVER_SKIP = new Set(['node_modules', '.git', 'public', 'data', 'dist', 'coverage', 'uploads']);
+const collectServerFiles = (root) =>
+  collectJsFiles(root, { skip: SERVER_SKIP, keep: (name) => /\.(mjs|js)$/.test(name) && !name.endsWith('.config.cjs') });
+
+// public/ is browser territory: .js only, dual-parsed (ESM, then classic).
+const FRONTEND_SKIP = new Set(['node_modules', '.git']);
+const collectFrontendFiles = async (projectDir) => {
   const publicDir = join(projectDir, 'public');
-  if (!existsSync(publicDir)) return [];
-  const skip = new Set(['node_modules', '.git']);
-  const out = [];
-  async function walk(dir) {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (skip.has(entry.name)) continue;
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.name.endsWith('.js')) out.push(full);
-    }
-  }
-  await walk(publicDir);
-  return out;
-}
+  return existsSync(publicDir)
+    ? collectJsFiles(publicDir, { skip: FRONTEND_SKIP, keep: (name) => name.endsWith('.js') })
+    : [];
+};
 
 function readdirSyncSafe(dir) {
   try {
