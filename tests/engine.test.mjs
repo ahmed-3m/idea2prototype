@@ -52,6 +52,18 @@ test('add auth-local keeps the web project green', async (t) => {
   assert.match(stdout, /4 tests passed/); // 3 web + 1 auth session flow
 });
 
+// Regression for #16: auth-local persists data/users.json in the project dir,
+// so a fixed test username 409s on the SECOND check. The template now
+// registers a unique user per run — re-checking the same project must pass.
+test('add auth-local passes check twice in a row (re-check loop)', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'auth-local' });
+  const first = await i2p(['check'], { cwd: projectDir });
+  assert.match(first.stdout, /PASS \(3\/3 passed\)/);
+  const second = await i2p(['check'], { cwd: projectDir });
+  assert.match(second.stdout, /PASS \(3\/3 passed\)/);
+  assert.match(second.stdout, /4 tests passed/);
+});
+
 test('add upload keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'upload' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
