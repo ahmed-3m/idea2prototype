@@ -39,5 +39,7 @@ test('rateLimit: custom keyFn isolates clients into separate buckets', async () 
   assert.equal(first[0], 200);
   assert.equal(second[0], 429); // same key: over the limit
   assert.equal(other[0], 200); // different key: fresh bucket
-  assert.equal(second[2]['Retry-After'], '60');
+  // exact value depends on elapsed ms — assert the range, not '60'
+  const retryAfter = Number(second[2]['Retry-After']);
+  assert.ok(retryAfter >= 59 && retryAfter <= 60, `unexpected Retry-After ${retryAfter}`);
 });
