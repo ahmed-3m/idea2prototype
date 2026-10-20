@@ -8,5 +8,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      timezone: Etc/UTC
+    groups:
+      # one weekly PR covering both actions, not two
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: "chore(ci)"
     labels:
       - dependencies
