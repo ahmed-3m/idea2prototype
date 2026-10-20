@@ -258,6 +258,17 @@ async function runChecks(projectDir, asJson) {
     }
   }
   process.exitCode = failed.length ? 1 : 0;
+  // A foreign server.mjs can leave handles the engine holds no reference to
+  // (listening at import time — the spec-4/7 benchmark controls hung verify
+  // forever after printing). Only the flagged paths exit explicitly, AFTER
+  // stdout flushed — an unconditional exit is not an option: it races the
+  // libuv handle wind-down right after app.close() and aborts with a
+  // UV_HANDLE_CLOSING assertion on Windows (empirically: every scaffold
+  // check failed that way).
+  if (steps.some((s) => s.unreachableHandles)) {
+    if (process.stdout.writableLength) process.stdout.once('drain', () => process.exit(process.exitCode));
+    else process.exit(process.exitCode);
+  }
 }
 
 async function stepSyntax(projectDir) {
@@ -312,7 +323,7 @@ async function stepTests(projectDir, syntaxPassed) {
   if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
   let testFiles = [];
   try {
-    testFiles = (await readdir(testDir)).filter((f) => f.endsWith('.test.mjs'));
+    testFiles = (await readdir(testDir)).filter((f) => f.endsWith('.test.mjs')).sort();
   } catch {
     return { name: 'tests', status: 'skip', detail: 'no tests/ directory' };
   }
@@ -323,12 +334,28 @@ async function stepTests(projectDir, syntaxPassed) {
   // doesn't put the child into child-reporter mode (no TAP summary).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
   const fileArgs = testFiles.map((f) => join('tests', f));
-  const spawnOpts = { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env };
+  // Serial execution trades wall-clock for determinism — scale the spawn
+  // budget with the file count so slow-but-passing suites aren't killed
+  // (90s floor, 30s per file, 5-minute ceiling).
+  const spawnOpts = {
+    encoding: 'utf8',
+    timeout: Math.min(300_000, Math.max(90_000, 30_000 * testFiles.length)),
+    cwd: projectDir,
+    maxBuffer: 16 * 1024 * 1024,
+    env,
+  };
   const capture = (res) => `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
 
+  // Run test files ONE AT A TIME (--test-concurrency=1, sorted order). Each
+  // file is its own process; concurrent files each hold an in-memory cache
+  // over the same JSON data store and lose updates against each other (the
+  // spec-4 benchmark caught generated CRUD rows leaking nondeterministically).
+  // Nodes lacking either runner flag (--test-concurrency: 18.19+/20.10+/21+,
+  // --test-timeout: 20.11+/21.2+) take the bare fallback below — the same
+  // pre-change behavior (races possible, generated tests still self-relative).
   let res = spawnSync(
     process.execPath,
-    ['--test', '--test-reporter=tap', '--test-timeout=15000', ...fileArgs],
+    ['--test', '--test-reporter=tap', '--test-timeout=15000', '--test-concurrency=1', ...fileArgs],
     spawnOpts,
   );
   let out = capture(res);
@@ -387,10 +414,15 @@ async function bootServer(projectDir, marker) {
 
   const started = Date.now();
   let app; // closed in finally once started — a leaked listener hangs the process forever
+  // The import ran but no app handle came back to close: the module may hold
+  // its own listeners (foreign entry points often listen at import time).
+  // Mark the step so runChecks exits explicitly after printing the verdict —
+  // those handles are unreachable from here and would hang the process.
+  const leakedImport = { unreachableHandles: true };
   try {
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
-      return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
+      return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()', ...leakedImport };
     }
     app = await withTimeout(mod.start(0), 10_000, 'server start');
     // redirect: 'manual' — never follow a redirect off the probe target; the
@@ -431,7 +463,14 @@ async function bootServer(projectDir, marker) {
     }
     return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
   } catch (err) {
-    return { name: 'boot', status: 'fail', detail: String(err?.message ?? err) };
+    // Import or start() threw before app was assigned → nothing was closed.
+    // (Probe failures after a successful start still run the finally close.)
+    return {
+      name: 'boot',
+      status: 'fail',
+      detail: String(err?.message ?? err),
+      ...(app ? {} : leakedImport),
+    };
   } finally {
     if (typeof app?.close === 'function') await app.close().catch(() => {});
   }
