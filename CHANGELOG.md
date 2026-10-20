@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Fixes for the critical + high findings of the 2026-10-20 repo review:
+
+- Security: `add api-crud` refuses resource names another feature owns (`users`, `auth`, `jobs`, `uploads`, `events`, `sse`, `ping`, `ratelimit`, `cors`, `cors-ping`, `health`). `--resource users` used to share `data/users.json` with `auth-local` — anonymous `GET /api/users` served every salt + hash, and an anonymous POST could plant a login-capable account.
+- Security: `upload` serves only passive types inline (text, csv, json, raster images); everything else — including html, svg, js — comes back as `application/octet-stream` + `content-disposition: attachment`, and every response carries `x-content-type-options: nosniff` + a sandboxing CSP. Uploaded HTML used to render on the app's own origin (stored XSS).
+- Fix: `verify`/`check` boot the server even when no tests exist — a `start()` that throws used to verify PASS on syntax alone. Boot still skips after a syntax failure (structured `cause` on the tests step, no string coupling).
+- Fix: `verify` accepts a foreign `start()` that returns a bare `http.Server` (port via `address()`, callback-style close) and never lets a throwing/hanging `close()` replace the verdict — it crashed with `app.close(...).catch is not a function` before printing anything.
+- Fix: boot runs with the project as cwd (as the tests step already did), so `verify <dir>` from elsewhere boots the same app as `verify` from inside — scaffolds used to boot with no routes and no `public/`, foreign servers failed on cwd-relative reads.
+- Fix: `rateLimit()` limiters each own their buckets — one shared map let traffic on a generous route exhaust a strict route's budget for the same client.
+- Fix: `api-crud` POST ignores client-sent `id`/`createdAt` (two POSTs with the same `id` created duplicates, the second unreachable); PUT keeps `createdAt` too. SKILL.md/README composition snippets follow the same body-first pattern.
+- Tests: regression test per finding (engine suite + the generated template tests that every scaffold runs).
+
 ## 0.9.1
 
 - Fix: scaffolds made through a published install (`npx`, `npm i -g`) now pin registry coordinates in the check script (`npx -y @ahmed-3m/idea2prototype@<scaffold-version> check`) instead of an absolute path into the volatile npx cache — `npm run check` survives `npm cache clean` and runs on a second machine. Checkouts (repo clone, plugin cache) still pin the stable local engine path; the exact-version guarantee is unchanged either way. Template placeholder renamed `__IDEA2PROTOTYPE_BIN__` → `__IDEA2PROTOTYPE_CMD__` to match the broader contract.

@@ -68,7 +68,9 @@ export default [
       POST: async ({ body }) => {
         const bad = requireObject(body);
         if (bad) return bad;
-        const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body };
+        // body first: the server owns id + createdAt — a client-sent id would
+        // otherwise duplicate (or shadow) an existing item
+        const item = { ...body, id: randomUUID(), createdAt: new Date().toISOString() };
         (await load()).push(item);
         await persist();
         return [201, item];
@@ -88,7 +90,7 @@ export default [
         const list = await load();
         const index = list.findIndex((x) => x.id === params.id);
         if (index === -1) return [404, { error: 'not found' }];
-        list[index] = { ...list[index], ...body, id: list[index].id };
+        list[index] = { ...list[index], ...body, id: list[index].id, createdAt: list[index].createdAt };
         await persist();
         return [200, list[index]];
       },

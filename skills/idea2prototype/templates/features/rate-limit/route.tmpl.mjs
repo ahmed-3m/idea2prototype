@@ -3,9 +3,7 @@
 // Compose into any route handler: import { rateLimit } from './ratelimit.mjs'
 //   methods: { GET: rateLimit({ max: 10, windowMs: 60_000 })(async (ctx) => [200, { ok: true }]) }
 
-const buckets = new Map(); // key -> { count, resetAt }
 const CLEANUP_INTERVAL_MS = 60_000;
-let lastCleanup = 0;
 
 /**
  * Wrap a route handler with a per-key fixed-window limiter.
@@ -17,6 +15,10 @@ let lastCleanup = 0;
  * through with X-RateLimit-* headers merged into the response.
  */
 export function rateLimit({ max = 60, windowMs = 60_000, keyFn } = {}) {
+  // Buckets belong to THIS limiter: a shared map would let traffic on one
+  // wrapped route (say max 100) spend another route's budget (max 5).
+  const buckets = new Map(); // key -> { count, resetAt }
+  let lastCleanup = 0;
   return (handler) => async (ctx) => {
     const key = keyFn ? keyFn(ctx) : (ctx.req?.socket?.remoteAddress ?? 'local');
     const now = Date.now();

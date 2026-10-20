@@ -18,7 +18,7 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 `<skill-base>` is this skill's own directory (shown at the top of this skill when loaded). Commands:
 
 - `new <dir> --template web|api|cli|worker|library --name "..." --idea "..."` — scaffold a project
-- `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api)
+- `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api). Names another feature owns are refused (`users`, `auth`, `jobs`, `uploads`, `events`, `ping`, …) — e.g. use `members`, not `users`, next to `auth-local`
 - `add auth-local` — register/login/logout/me accounts: scrypt hashes, HMAC-signed cookies, `requireAuth` helper (web/api)
 - `add upload` — multipart file uploads with fetch-back endpoint + tests (web/api)
 - `add rate-limit` — per-key fixed-window limiter: `rateLimit({ max, windowMs, keyFn })` wraps any handler, 429 + Retry-After + X-RateLimit-* headers, `GET /api/ping` demo (web/api)
@@ -52,7 +52,7 @@ import { requireAuth } from './auth.mjs';
 POST: requireAuth(async ({ body, user }) => {
   const bad = requireObject(body);
   if (bad) return bad;
-  const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body, author: user.username };
+  const item = { ...body, id: randomUUID(), createdAt: new Date().toISOString(), author: user.username };
   (await load()).push(item);
   await persist();
   return [201, item];

@@ -1,28 +1,31 @@
 // Idea2Prototype feature: upload — multipart/form-data file uploads with a
 // zero-dependency parser. Files land in uploads/, served back by id.
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
-const MIME = {
+// Uploads are served from the app's own origin, so anything a browser would
+// EXECUTE (html, svg, js) must never come back as active content — that is
+// stored XSS riding the user's session. Only these passive types render
+// inline; everything else is sent as application/octet-stream + attachment.
+// Every response also carries nosniff + a sandboxing CSP (belt and braces).
+const INLINE_MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/plain; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.csv': 'text/csv; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
-  '.pdf': 'application/pdf',
-  '.zip': 'application/zip',
+};
+const SAFE_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'content-security-policy': "default-src 'none'; sandbox",
 };
 
 // Parse a multipart/form-data buffer into parts. Minimal per RFC 7578: each
@@ -90,7 +93,15 @@ export default [
           return [404, { error: 'not found' }];
         }
         const data = await readFile(full);
-        return [200, data, { 'content-type': MIME[extname(full).toLowerCase()] ?? 'application/octet-stream' }];
+        const inline = INLINE_MIME[extname(full).toLowerCase()];
+        return [200, data, inline
+          ? { ...SAFE_HEADERS, 'content-type': inline }
+          : {
+              ...SAFE_HEADERS,
+              'content-type': 'application/octet-stream',
+              // re-sanitized: files dropped into uploads/ by hand skip safeName()
+              'content-disposition': `attachment; filename="${basename(full).replace(/[^a-zA-Z0-9._-]/g, '_')}"`,
+            }];
       },
     },
   },

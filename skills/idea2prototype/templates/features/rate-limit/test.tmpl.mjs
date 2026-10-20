@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { start } from '../server.mjs';
 import { rateLimit } from '../routes/ratelimit.mjs';
 
-// NOTE: both tests share the module-level rate buckets; the second test uses
-// custom keys so it is independent of the first test's IP bucket.
+// NOTE: each rateLimit() call owns its buckets, so these tests are
+// independent of each other and of the /api/ping demo's limiter.
 
 test('GET /api/ping allows max then returns 429 with limit headers', async (t) => {
   const app = await start(0);
@@ -45,4 +45,17 @@ test('rateLimit: custom keyFn isolates clients into separate buckets', async () 
   // exact value depends on elapsed ms — assert the range, not '60'
   const retryAfter = Number(second[2]['Retry-After']);
   assert.ok(retryAfter >= 59 && retryAfter <= 60, `unexpected Retry-After ${retryAfter}`);
+});
+
+test('rateLimit: separate limiters never share a budget for the same key', async () => {
+  const strict = rateLimit({ max: 2 })(async () => [200, { route: 'strict' }]);
+  const generous = rateLimit({ max: 100 })(async () => [200, { route: 'generous' }]);
+  const ctx = { req: { socket: { remoteAddress: '203.0.113.7' } } }; // same client on both
+
+  for (let i = 0; i < 5; i++) assert.equal((await generous(ctx))[0], 200);
+  // traffic on the generous route must not have spent the strict one's budget
+  assert.equal((await strict(ctx))[0], 200);
+  assert.equal((await strict(ctx))[0], 200);
+  assert.equal((await strict(ctx))[0], 429);
+  assert.equal((await generous(ctx))[2]['X-RateLimit-Remaining'], '94');
 });

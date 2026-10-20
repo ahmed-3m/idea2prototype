@@ -40,6 +40,27 @@ test('{{resource}} CRUD roundtrip', async () => {
   }
 });
 
+test('{{resource}} ignores client-sent id and createdAt', async () => {
+  const app = await start(0);
+  const base = `http://127.0.0.1:${app.port}/api/{{resource}}`;
+  try {
+    const spoof = { id: 'client-chosen', createdAt: '1999-01-01T00:00:00.000Z', title: 'spoof' };
+    const a = await (await fetch(base, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(spoof) })).json();
+    const b = await (await fetch(base, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(spoof) })).json();
+    assert.notEqual(a.id, 'client-chosen');
+    assert.notEqual(a.id, b.id, 'two creates must never share an id');
+    assert.notEqual(a.createdAt, spoof.createdAt);
+
+    const put = await (await fetch(`${base}/${a.id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(spoof) })).json();
+    assert.equal(put.id, a.id);
+    assert.equal(put.createdAt, a.createdAt);
+
+    for (const item of [a, b]) await fetch(`${base}/${item.id}`, { method: 'DELETE' });
+  } finally {
+    await app.close();
+  }
+});
+
 test('{{resource}} rejects non-object bodies', async () => {
   const app = await start(0);
   try {

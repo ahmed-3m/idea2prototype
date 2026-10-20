@@ -94,7 +94,7 @@ import { requireAuth } from './auth.mjs';
 
 POST: requireAuth(async ({ body, user }) => {
   // ...original handler body...
-  const item = { id, createdAt, ...body, author: user.username };
+  const item = { ...body, id, createdAt, author: user.username }; // body first: server-owned fields win
   // ...persist and return [201, item]...
 }),
 ```
