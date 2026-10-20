@@ -232,6 +232,20 @@ test('add sse keeps the api project green', async (t) => {
   assert.match(stdout, /4 tests passed/); // 3 api + 1 sse stream
 });
 
+test('add worker-jobs keeps the web project green', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'worker-jobs' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /7 tests passed/); // 3 web + 4 job queue
+});
+
+test('add worker-jobs keeps the api project green', async (t) => {
+  const projectDir = await scaffold(t, { template: 'api', feature: 'worker-jobs' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /7 tests passed/); // 3 api + 4 job queue
+});
+
 // Pins the streaming-contract guard from the non-streaming side: a handler
 // that returns nothing (and never wrote to res) must land as a clean 500 —
 // not a crash, not a hang. The streaming side is the sse feature test above.

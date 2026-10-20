@@ -5,6 +5,7 @@
 // Commands:
 //   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
 //   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
+//                                    | cors | sse | worker-jobs
 //   idea2prototype check [--json]    syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
@@ -154,6 +155,21 @@ const FEATURES = {
       'tests/sse.test.mjs  SSE headers + first-event read + clean abort/close',
       'stream pattern: write chunks to ctx.res directly and return nothing — the server keeps the stream open',
       'demo route: delete GET /api/events from routes/sse.mjs (and its test) when done',
+    ],
+  },
+  'worker-jobs': {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'jobs.mjs': 'jobs.tmpl.mjs',
+      'routes/jobs.mjs': 'route.tmpl.mjs',
+      'tests/jobs.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'jobs.mjs          persistent job queue: enqueue/list/registerHandler, data/jobs.json, 3 attempts',
+      'routes/jobs.mjs   POST /api/jobs -> 202 + job, GET /api/jobs[?status=] — demo routes',
+      'tests/jobs.test.mjs  echo done + fail retries to failed + unknown type + validation',
+      'own handlers: registerHandler("email", async ({ payload }) => { ... }) in server code',
+      'demo route: delete routes/jobs.mjs (and its test) when done — jobs.mjs keeps working',
     ],
   },
 };
@@ -544,7 +560,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs`);
   SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
