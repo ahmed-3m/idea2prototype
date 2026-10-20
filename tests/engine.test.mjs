@@ -749,6 +749,143 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
   );
 });
 
+// #52/#53/#57: everything `new` validates happens BEFORE any file is written,
+// and unknown flags die on every command instead of being silently ignored.
+test('new rejects reserved Windows device names and over-long names before writing', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-names-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  for (const bad of ['CON', 'nul', 'Aux', 'com1', 'lpt9', 'con/proj', 'sub/nul/x']) {
+    await assert.rejects(
+      i2p(['new', bad], { cwd: base }),
+      (err) => /reserved Windows device name/i.test(err.stderr ?? ''),
+    );
+  }
+  await assert.rejects(
+    i2p(['new', 'a'.repeat(201)], { cwd: base }),
+    (err) => /directory name too long/.test(err.stderr ?? ''),
+  );
+  assert.deepEqual(await readdir(base), []); // nothing scaffolded by any attempt
+  // boundary: COM1-9 are reserved; COM10 reads as an ordinary name and scaffolds
+  await i2p(['new', 'com10'], { cwd: base });
+  assert.deepEqual(await readdir(base), ['com10']);
+});
+
+test('new fails on quote/backslash --name or --idea before writing any files', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-badval-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await assert.rejects(
+    i2p(['new', 'proj', '--name', 'x"y'], { cwd: base }),
+    (err) => /invalid --name value/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'proj', '--idea', 'say "hi"'], { cwd: base }),
+    (err) => /invalid --idea value/.test(err.stderr ?? ''),
+  );
+  assert.deepEqual(await readdir(base), []);
+});
+
+test('unknown flags die with the allowed list instead of being ignored', async (t) => {
+  const dir = await scaffold(t, { template: 'cli' });
+  await assert.rejects(
+    i2p(['check', '--frobnicate'], { cwd: dir }),
+    (err) => /unknown flag "--frobnicate" \(allowed: --json\)/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'x', '--nope'], { cwd: dir }),
+    (err) => /unknown flag "--nope"/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['list', '--nope'], { cwd: HERE }),
+    (err) => /unknown flag "--nope" \(allowed: none\)/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['map', '--nope'], { cwd: HERE }),
+    (err) => /unknown flag "--nope" \(allowed: --json\)/.test(err.stderr ?? ''),
+  );
+  // a value flag with no value, an empty string, or a flag-like next token is not silently skipped
+  await assert.rejects(
+    i2p(['new', 'x', '--template'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'x', '--name', ''], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'x', '--idea', '--name'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+  // single-dash operands are typos of flags this CLI does not have
+  await assert.rejects(
+    i2p(['new', 'x', '--idea', '-nope'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+});
+
+// extra positionals are not silently ignored either: `check ./proj` that
+// quietly ignores ./proj and checks cwd is a silent wrong answer.
+test('extra positional arguments die instead of being ignored', async (t) => {
+  const dir = await scaffold(t, { template: 'cli' });
+  for (const [args, msg] of [
+    [['check', 'somewhere'], /unexpected argument "somewhere" — check takes no arguments/],
+    [['verify', 'a', 'b'], /unexpected argument "b" — verify takes one optional directory/],
+    [['map', 'a', 'b'], /unexpected argument "b" — map takes one optional directory/],
+    [['list', 'x'], /unexpected argument "x" — list takes no arguments/],
+    [['new', 'a', 'b'], /unexpected argument "b" — new takes one directory name/],
+    [['add', 'rate-limit', 'extra'], /unexpected argument "extra" — add takes one feature name/],
+  ]) {
+    await assert.rejects(
+      i2p(args, { cwd: args[0] === 'list' ? HERE : dir }),
+      (err) => msg.test(err.stderr ?? ''),
+    );
+  }
+});
+
+test('new reports an unusable parent directory instead of a raw ENOENT', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-parent-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(join(base, 'notadir'), 'a file, not a directory');
+  await assert.rejects(
+    i2p(['new', 'notadir/sub'], { cwd: base }),
+    (err) => /does not exist or is not a directory/.test(err.stderr ?? '') && !/ENOENT/.test(err.stderr ?? ''),
+  );
+});
+
+// cp(recursive) creates missing intermediate parents, so nested paths like
+// `new sub/proj` with sub absent are supported inputs — pinned after a review
+// round nearly traded them away for the friendly-parent-error fix above.
+test('new scaffolds into a nested path whose parents do not exist yet', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-nested-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  const { stdout } = await i2p(['new', 'sub/proj'], { cwd: base });
+  assert.match(stdout, /prototype ready: proj/);
+  assert.ok(await readFile(join(base, 'sub', 'proj', '.idea2prototype.json'), 'utf8'), 'marker landed');
+});
+
+// #57.3: a hung test run must surface as a timeout verdict, not spawn
+// plumbing — and it takes TWO shapes depending on Node version: 22's runner
+// kills a top-level-blocked file itself (--test-timeout fires at file level,
+// TAP says "testTimeoutFailure"), 24's never fires so the engine's spawn
+// budget is the only bound (ETIMEDOUT, no summary). The predicate accepts
+// both; anything else ("? failed of ?", spawnSync errors) is a regression.
+// COST: on runners where the file-level timeout does not fire this test
+// deliberately burns the full spawn budget (~90s of the suite). That is the
+// point; do not "fix" it by shortening. On POSIX the budget kill reaches only
+// the direct child (node --test), so a spinning test worker may briefly
+// outlive it — acceptable on disposable CI runners (Windows kills the tree
+// cleanly; verified locally).
+test('verify reports a hung test run as a timeout verdict, not spawn plumbing', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-hang-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(join(dir, 'tests', 'hang.test.mjs'), 'while (true) {}\n');
+  await assert.rejects(
+    i2p(['verify', dir], { cwd: HERE }),
+    (err) => /tests timed out/.test(err.stdout ?? '')
+      && !/spawnSync/.test(err.stdout ?? '') && !/\? failed of \?/.test(err.stdout ?? ''),
+  );
+});
+
 test('npm bin shim runs the engine', async () => {
   const bin = fileURLToPath(new URL('../bin/i2p.mjs', import.meta.url));
   const { stdout } = await run(process.execPath, [bin, 'version'], { timeout: 30_000 });
