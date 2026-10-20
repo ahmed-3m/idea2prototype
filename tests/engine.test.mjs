@@ -607,8 +607,13 @@ test('verify exits after its verdict on a foreign server that listens at import'
 // (2 leaked rows in 3 runs). stepTests now runs files one at a time, in sorted
 // order, so a later file deterministically observes an earlier file's writes.
 test('test files run serially — a later test file sees an earlier one\'s store writes', async (t) => {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (major < 20) return t.skip('serialized file execution needs --test-concurrency (Node >= 20); Node 18 keeps the bare-runner fallback');
+  // The serialized path only activates when the runner accepts BOTH flags.
+  // --test-concurrency exists since 18.19/20.10/21, but --test-timeout (also
+  // passed) only since 20.11/21.2 — and on any Node lacking either flag the
+  // engine already takes the bare-runner fallback (status-quo behavior).
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  const serialSupported = major > 21 || (major === 21 && minor >= 2) || (major === 20 && minor >= 11);
+  if (!serialSupported) return t.skip('serialized file execution needs --test-concurrency AND --test-timeout (Node >= 20.11); older Nodes keep the bare-runner fallback');
 
   const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
   await writeFile(
