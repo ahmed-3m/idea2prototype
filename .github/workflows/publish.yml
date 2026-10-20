@@ -40,10 +40,8 @@ jobs:
             exit 1
           fi
 
-      - name: Publish (renamed to the required scope)
-        run: |
-          npm pkg set name="@ahmed-3m/idea2prototype"
-          npm publish
+      - name: Publish
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -78,5 +76,4 @@ jobs:
             echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish (manual dispatch)"
             exit 0
           fi
-          npm pkg set name="@ahmed-3m/idea2prototype"
           npm publish --access public

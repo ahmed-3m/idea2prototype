@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { start } from '../server.mjs';
 import { rateLimit } from '../routes/ratelimit.mjs';
 
-// NOTE: both tests share the module-level rate buckets; the second test uses
-// custom keys so it is independent of the first test's IP bucket.
+// NOTE: each rateLimit({...}) instance owns its own buckets (the map lives
+// inside the factory) — that independence is pinned by the third test.
 
 test('GET /api/ping allows max then returns 429 with limit headers', async (t) => {
   const app = await start(0);
@@ -45,4 +45,24 @@ test('rateLimit: custom keyFn isolates clients into separate buckets', async () 
   // exact value depends on elapsed ms — assert the range, not '60'
   const retryAfter = Number(second[2]['Retry-After']);
   assert.ok(retryAfter >= 59 && retryAfter <= 60, `unexpected Retry-After ${retryAfter}`);
+});
+
+test('rateLimit: independently configured wrappers never share budget', async () => {
+  // exhaust a tight limiter, then prove a loose limiter's FIRST request
+  // still sees a full budget (module-level buckets used to leak the count
+  // across wrappers — cross-route lockout)
+  const tight = rateLimit({ max: 1, windowMs: 60_000, keyFn: (ctx) => ctx.key })(
+    async () => [200, { which: 'tight' }],
+  );
+  const loose = rateLimit({ max: 50, windowMs: 60_000, keyFn: (ctx) => ctx.key })(
+    async () => [200, { which: 'loose' }],
+  );
+
+  await tight({ key: 'carol', req: {} }); // tight budget spent
+  assert.equal((await tight({ key: 'carol', req: {} }))[0], 429);
+
+  const [status, , headers] = await loose({ key: 'carol', req: {} }); // same client, other route
+  assert.equal(status, 200); // NOT locked out by the tight wrapper
+  assert.equal(headers['X-RateLimit-Limit'], '50');
+  assert.equal(headers['X-RateLimit-Remaining'], '49'); // full budget, not 48
 });

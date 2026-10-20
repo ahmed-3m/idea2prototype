@@ -190,6 +190,116 @@ test('add auth-local keeps the web project green', async (t) => {
   assert.match(stdout, /4 tests passed/); // 3 web + 1 auth session flow
 });
 
+// Shared helper for the template-behavior tests: boot a scaffold's server as
+// a subprocess (its routes resolve from process.cwd()) and resolve once the
+// boot log names the port. Platform-branched kill mirrors the quarantine test.
+async function bootServer(t, projectDir) {
+  const child = spawn(process.execPath, ['server.mjs'], { cwd: projectDir, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const stop = async () => {
+    if (child.exitCode !== null) return;
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    } else {
+      child.kill('SIGKILL');
+    }
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 3_000);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+    await new Promise((r) => setTimeout(r, 300)); // let Windows release the cwd handle before scaffold cleanup
+  };
+  t.after(stop);
+  let bootLog = '';
+  child.stdout.on('data', (c) => { bootLog += c; });
+  child.stderr.on('data', (c) => { bootLog += c; });
+  const deadline = Date.now() + 15_000;
+  let port = 0;
+  while (Date.now() < deadline && !port) {
+    port = Number(/running at http:\/\/127\.0\.0\.1:(\d+)/.exec(bootLog)?.[1]);
+    if (!port) await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.ok(port, `server never booted; log: ${bootLog}`);
+  return { port, stop };
+}
+
+// #58.1: >10MB bodies used to get a TCP reset (curl exit 56, no status at
+// all) because readRawBody destroyed the socket before any response. The
+// server must answer 413 first and stay alive. Both server templates carry
+// identical body-handling code — drive both.
+test('oversize request bodies get a 413 response, not a connection reset', async (t) => {
+  for (const template of ['web', 'api']) {
+    await t.test(template, async () => {
+      const projectDir = await scaffold(t, { template });
+      await mkdir(join(projectDir, 'routes'), { recursive: true });
+      await writeFile(join(projectDir, 'routes', 'big.mjs'),
+        "export default {\n  path: '/api/big',\n  methods: { POST: async () => [200, { ok: true }] },\n};\n");
+      const { port, stop } = await bootServer(t, projectDir);
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/big`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' },
+          body: Buffer.alloc(11 * 1024 * 1024, 1), // over readRawBody's 10MB limit
+          signal: AbortSignal.timeout(10_000),
+        });
+        assert.equal(res.status, 413);
+        // the server survives the oversized upload
+        const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(health.status, 200);
+      } finally {
+        await stop();
+      }
+    });
+  }
+});
+
+// #58.4/#58.5: contract-violating handler returns and non-standard statuses
+// must degrade to clean 500s ("handler returned an invalid result" / clamp),
+// never leak parser plumbing ("result is not iterable", "Invalid status
+// code: b"), and never crash the server process.
+// code: b"), and never crash the server process. Both server templates carry
+// identical dispatch code — drive both.
+test('contract-violating handler returns get clean 500s; [200] sends null; server survives', async (t) => {
+  for (const template of ['web', 'api']) {
+    await t.test(template, async () => {
+      const projectDir = await scaffold(t, { template });
+      await mkdir(join(projectDir, 'routes'), { recursive: true });
+      await writeFile(join(projectDir, 'routes', 'junk.mjs'),
+        "export default {\n" +
+        "  path: '/api/junk',\n" +
+        '  methods: {\n' +
+        '    GET: async (ctx) => {\n' +
+        "      const kind = ctx.url.searchParams.get('kind');\n" +
+        "      if (kind === 'string') return 'not an array';\n" +
+        "      if (kind === 'undef') return undefined;\n" +
+        "      if (kind === 'weird') return [999, 'x'];\n" +
+        '      return [200];\n' +
+        '    },\n' +
+        '  },\n' +
+        '};\n');
+      const { port, stop } = await bootServer(t, projectDir);
+      try {
+        for (const kind of ['string', 'undef', 'weird']) {
+          const res = await fetch(`http://127.0.0.1:${port}/api/junk?kind=${kind}`, { signal: AbortSignal.timeout(5_000) });
+          assert.equal(res.status, 500, `${kind} must be a 500`);
+          const body = await res.json();
+          if (kind === 'weird') {
+            assert.equal(body, 'x'); // 999 clamps to 500; the payload still goes out verbatim
+          } else {
+            assert.match(String(body.error), /invalid result/); // no "not iterable" internals
+          }
+        }
+        const noPayload = await fetch(`http://127.0.0.1:${port}/api/junk`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(noPayload.status, 200); // [200] with no payload: "null", not a TypeError
+        assert.equal(await noPayload.text(), 'null');
+        const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(health.status, 200);
+      } finally {
+        await stop();
+      }
+    });
+  }
+});
+
 // Regression for #16: auth-local persists data/users.json in the project dir,
 // so a fixed test username 409s on the SECOND check. The template now
 // registers a unique user per run — re-checking the same project must pass.
@@ -212,7 +322,7 @@ test('stacking multiple features keeps the project green', async (t) => {
   await i2p(['add', 'rate-limit'], { cwd: projectDir });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /10 tests passed/); // 3 web + 1 auth + 2+2 crud + 2 rate-limit
+  assert.match(stdout, /11 tests passed/); // 3 web + 1 auth + 2+2 crud + 3 rate-limit
 });
 
 // Executes the SKILL.md "Composing features" worked example literally:
@@ -302,7 +412,7 @@ test('add rate-limit keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'rate-limit' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /5 tests passed/); // 3 web + 2 rate-limit
+  assert.match(stdout, /6 tests passed/); // 3 web + 3 rate-limit (headers, keys, budget independence)
 });
 
 test('add cors keeps the web project green', async (t) => {
