@@ -6,8 +6,6 @@
 
 **Turn ideas into tested prototypes — token-lean, for any coding agent.** Zero-dependency scaffolds, feature modules with tests baked in, one-command verification, and a repo map for surgical context. Ships as an npm CLI (`i2p`) and a [ZCode](https://z.ai) plugin; works with any agent that can run a shell (Claude Code, Cline, OpenHands, Cursor, …).
 
-> **Starting from a fuzzy idea?** Load the [`brainstorm2idea`](https://github.com/ahmed-3m/brainstorm2idea) skill and run `/b2i "<raw idea>"`. After approval, run `b2i handoff <dir> --brief brief.md` to invoke `idea2prototype new`.
-
 ```
 $ npm run check
 
