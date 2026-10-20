@@ -112,7 +112,7 @@ try {
   // ignored; bounded to 3 rounds / 20 assets so a self-referencing app can't
   // loop the judge.
   const visited = new Set();
-  const sameOrigin = (s) => s.startsWith('/') || s.startsWith('./') || s.startsWith('../');
+  const sameOrigin = (s) => (s.startsWith('/') ? !s.startsWith('//') : s.startsWith('./') || s.startsWith('../'));
   const candidates = (src) => {
     const out = [];
     const patterns = [
