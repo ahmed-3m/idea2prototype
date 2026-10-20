@@ -49,6 +49,7 @@ async function cmdNew(rest) {
   const opts = parseFlags(rest, ['template', 'name', 'idea']);
   const dir = opts._[0];
   if (!dir) die('usage: idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]');
+  checkPositionalCount(opts, 1, 'new takes one directory name (new <dir>)');
 
   const template = opts.template ?? 'web';
   const templateDir = join(TEMPLATES_DIR, template);
@@ -81,9 +82,13 @@ async function cmdNew(rest) {
   }
 
   const target = resolve(process.cwd(), dir);
-  const parent = dirname(target);
-  if (!existsSync(parent) || !statSync(parent).isDirectory()) {
-    die(`cannot create "${dir}" — parent ${parent} does not exist or is not a directory`);
+  // cp(recursive) creates missing intermediate parents, so nested `new sub/proj`
+  // is a supported input — create them here, where an unusable path (a file in
+  // the prefix, no permissions) dies with a readable message instead of ENOENT.
+  try {
+    await mkdir(dirname(target), { recursive: true });
+  } catch (err) {
+    die(`cannot create "${dir}" — parent path does not exist or is not a directory${err?.code ? ` (${err.code})` : ''}`);
   }
   if (existsSync(target) && readdirSyncSafe(target).length > 0) {
     die(`"${target}" exists and is not empty — idea2prototype never overwrites existing files`);
@@ -213,6 +218,7 @@ const FEATURES = {
 async function cmdAdd(rest) {
   const feature = rest[0]?.startsWith('--') ? undefined : rest[0];
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
+  checkPositionalCount(opts, 0, 'add takes one feature name (add <feature>)');
   const available = Object.keys(FEATURES).join(', ');
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
   const def = FEATURES[feature];
@@ -258,6 +264,7 @@ async function cmdAdd(rest) {
 // ---------------------------------------------------------------------------
 async function cmdCheck(rest) {
   const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 0, 'check takes no arguments — run it from inside the project');
   await loadMarker(); // must run inside a idea2prototype project
   return runChecks(process.cwd(), 'json' in opts, 'check');
 }
@@ -266,6 +273,7 @@ async function cmdCheck(rest) {
 // this tool never scaffolded (benchmark control arm, external code).
 async function cmdVerify(rest) {
   const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 1, 'verify takes one optional directory (verify [dir])');
   const dir = opts._[0];
   const target = resolve(process.cwd(), dir ?? '.');
   if (!existsSync(target) || !statSync(target).isDirectory()) {
@@ -595,7 +603,8 @@ async function bootServer(projectDir, marker) {
 // list / help
 // ---------------------------------------------------------------------------
 async function cmdList(rest) {
-  parseFlags(rest, []);
+  const opts = parseFlags(rest, []);
+  checkPositionalCount(opts, 0, 'list takes no arguments');
   const templates = (await readdir(TEMPLATES_DIR, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name !== 'features')
     .map((d) => d.name);
@@ -607,6 +616,7 @@ async function cmdList(rest) {
 // to read instead of loading whole files into context.
 async function cmdMap(rest) {
   const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 1, 'map takes one optional directory (map [dir])');
   const dir = opts._[0];
   const asJson = 'json' in opts;
   const root = resolve(process.cwd(), dir ?? '.');
@@ -692,7 +702,7 @@ function parseFlags(args, valueFlags, booleanFlags = []) {
       const key = arg.slice(2);
       if (valueFlags.includes(key)) {
         const val = args[++i];
-        if (val === undefined || val.startsWith('--')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
+        if (val === undefined || val === '' || val.startsWith('--')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
         out[key] = val;
       } else if (booleanFlags.includes(key)) {
         out[key] = true;
@@ -704,6 +714,13 @@ function parseFlags(args, valueFlags, booleanFlags = []) {
     }
   }
   return out;
+}
+
+// Positionals beyond what a command consumes die instead of being silently
+// ignored — `check ./proj` that quietly ignores ./proj is a silent wrong answer.
+function checkPositionalCount(opts, max, what) {
+  const extra = opts._[max];
+  if (extra !== undefined) die(`unexpected argument "${extra}" — ${what}`);
 }
 
 // Canonical marker reader: null when absent or unparseable.

@@ -655,6 +655,9 @@ test('new rejects reserved Windows device names and over-long names before writi
     (err) => /directory name too long/.test(err.stderr ?? ''),
   );
   assert.deepEqual(await readdir(base), []); // nothing scaffolded by any attempt
+  // boundary: COM1-9 are reserved; COM10 reads as an ordinary name and scaffolds
+  await i2p(['new', 'com10'], { cwd: base });
+  assert.deepEqual(await readdir(base), ['com10']);
 });
 
 test('new fails on quote/backslash --name or --idea before writing any files', async (t) => {
@@ -689,11 +692,38 @@ test('unknown flags die with the allowed list instead of being ignored', async (
     i2p(['map', '--nope'], { cwd: HERE }),
     (err) => /unknown flag "--nope" \(allowed: --json\)/.test(err.stderr ?? ''),
   );
-  // a value flag with no value (or followed by another flag) is not silently skipped
+  // a value flag with no value, an empty string, or a flag-like next token is not silently skipped
   await assert.rejects(
     i2p(['new', 'x', '--template'], { cwd: dir }),
     (err) => /needs a value/.test(err.stderr ?? ''),
   );
+  await assert.rejects(
+    i2p(['new', 'x', '--name', ''], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'x', '--idea', '--name'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+});
+
+// extra positionals are not silently ignored either: `check ./proj` that
+// quietly ignores ./proj and checks cwd is a silent wrong answer.
+test('extra positional arguments die instead of being ignored', async (t) => {
+  const dir = await scaffold(t, { template: 'cli' });
+  for (const [args, msg] of [
+    [['check', 'somewhere'], /unexpected argument "somewhere" — check takes no arguments/],
+    [['verify', 'a', 'b'], /unexpected argument "b" — verify takes one optional directory/],
+    [['map', 'a', 'b'], /unexpected argument "b" — map takes one optional directory/],
+    [['list', 'x'], /unexpected argument "x" — list takes no arguments/],
+    [['new', 'a', 'b'], /unexpected argument "b" — new takes one directory name/],
+    [['add', 'rate-limit', 'extra'], /unexpected argument "extra" — add takes one feature name/],
+  ]) {
+    await assert.rejects(
+      i2p(args, { cwd: args[0] === 'list' ? HERE : dir }),
+      (err) => msg.test(err.stderr ?? ''),
+    );
+  }
 });
 
 test('new reports an unusable parent directory instead of a raw ENOENT', async (t) => {
@@ -706,9 +736,25 @@ test('new reports an unusable parent directory instead of a raw ENOENT', async (
   );
 });
 
+// cp(recursive) creates missing intermediate parents, so nested paths like
+// `new sub/proj` with sub absent are supported inputs — pinned after a review
+// round nearly traded them away for the friendly-parent-error fix above.
+test('new scaffolds into a nested path whose parents do not exist yet', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-nested-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  const { stdout } = await i2p(['new', 'sub/proj'], { cwd: base });
+  assert.match(stdout, /prototype ready: proj/);
+  assert.ok(await readFile(join(base, 'sub', 'proj', '.idea2prototype.json'), 'utf8'), 'marker landed');
+});
+
 // #57.3: a synchronous infinite loop blocks the event loop, so node --test's
 // own --test-timeout can never fire — the engine's spawn budget is the only
 // bound, and its verdict must read as a timeout, not spawn plumbing.
+// COST: this test deliberately burns the full spawn budget (~90s of the ~2min
+// suite). That is the point; do not "fix" it by shortening. On POSIX the budget
+// kill reaches only the direct child (node --test), so a spinning test worker
+// may briefly outlive it — acceptable on disposable CI runners (Windows kills
+// the tree cleanly; verified locally).
 test('verify reports a hung test run as a timeout verdict, not spawn plumbing', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-hang-'));
   t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
