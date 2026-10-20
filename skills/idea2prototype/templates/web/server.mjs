@@ -56,6 +56,9 @@ function readRawBody(req, limit = 10e6) {
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
+      // Oversize policy: drain up to 2x limit so a clean 413 can still be
+      // delivered at end(); past 2x, destroy the socket to bound the cost of
+      // absorbing junk — those clients see a connection reset, deliberately.
       if (size > limit) {
         tooLarge = true;
         if (size > limit * 2) {

@@ -206,7 +206,7 @@ async function bootServer(t, projectDir) {
       const timer = setTimeout(resolve, 3_000);
       child.once('exit', () => { clearTimeout(timer); resolve(); });
     });
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300)); // let Windows release the cwd handle before scaffold cleanup
   };
   t.after(stop);
   let bootLog = '';
@@ -224,26 +224,31 @@ async function bootServer(t, projectDir) {
 
 // #58.1: >10MB bodies used to get a TCP reset (curl exit 56, no status at
 // all) because readRawBody destroyed the socket before any response. The
-// server must answer 413 first and stay alive.
+// server must answer 413 first and stay alive. Both server templates carry
+// identical body-handling code — drive both.
 test('oversize request bodies get a 413 response, not a connection reset', async (t) => {
-  const projectDir = await scaffold(t, {});
-  await mkdir(join(projectDir, 'routes'), { recursive: true });
-  await writeFile(join(projectDir, 'routes', 'big.mjs'),
-    "export default {\n  path: '/api/big',\n  methods: { POST: async () => [200, { ok: true }] },\n};\n");
-  const { port, stop } = await bootServer(t, projectDir);
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/big`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/octet-stream' },
-      body: Buffer.alloc(11 * 1024 * 1024, 1), // over readRawBody's 10MB limit
-      signal: AbortSignal.timeout(10_000),
+  for (const template of ['web', 'api']) {
+    await t.test(template, async () => {
+      const projectDir = await scaffold(t, { template });
+      await mkdir(join(projectDir, 'routes'), { recursive: true });
+      await writeFile(join(projectDir, 'routes', 'big.mjs'),
+        "export default {\n  path: '/api/big',\n  methods: { POST: async () => [200, { ok: true }] },\n};\n");
+      const { port, stop } = await bootServer(t, projectDir);
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/big`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' },
+          body: Buffer.alloc(11 * 1024 * 1024, 1), // over readRawBody's 10MB limit
+          signal: AbortSignal.timeout(10_000),
+        });
+        assert.equal(res.status, 413);
+        // the server survives the oversized upload
+        const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(health.status, 200);
+      } finally {
+        await stop();
+      }
     });
-    assert.equal(res.status, 413);
-    // the server survives the oversized upload
-    const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
-    assert.equal(health.status, 200);
-  } finally {
-    await stop();
   }
 });
 
@@ -251,41 +256,47 @@ test('oversize request bodies get a 413 response, not a connection reset', async
 // must degrade to clean 500s ("handler returned an invalid result" / clamp),
 // never leak parser plumbing ("result is not iterable", "Invalid status
 // code: b"), and never crash the server process.
+// code: b"), and never crash the server process. Both server templates carry
+// identical dispatch code — drive both.
 test('contract-violating handler returns get clean 500s; [200] sends null; server survives', async (t) => {
-  const projectDir = await scaffold(t, {});
-  await mkdir(join(projectDir, 'routes'), { recursive: true });
-  await writeFile(join(projectDir, 'routes', 'junk.mjs'),
-    "export default {\n" +
-    "  path: '/api/junk',\n" +
-    '  methods: {\n' +
-    '    GET: async (ctx) => {\n' +
-    "      const kind = ctx.url.searchParams.get('kind');\n" +
-    "      if (kind === 'string') return 'not an array';\n" +
-    "      if (kind === 'undef') return undefined;\n" +
-    "      if (kind === 'weird') return [999, 'x'];\n" +
-    '      return [200];\n' +
-    '    },\n' +
-    '  },\n' +
-    '};\n');
-  const { port, stop } = await bootServer(t, projectDir);
-  try {
-    for (const kind of ['string', 'undef', 'weird']) {
-      const res = await fetch(`http://127.0.0.1:${port}/api/junk?kind=${kind}`, { signal: AbortSignal.timeout(5_000) });
-      assert.equal(res.status, 500, `${kind} must be a 500`);
-      const body = await res.json();
-      if (kind === 'weird') {
-        assert.equal(body, 'x'); // 999 clamps to 500; the payload still goes out verbatim
-      } else {
-        assert.match(String(body.error), /invalid result/); // no "not iterable" internals
+  for (const template of ['web', 'api']) {
+    await t.test(template, async () => {
+      const projectDir = await scaffold(t, { template });
+      await mkdir(join(projectDir, 'routes'), { recursive: true });
+      await writeFile(join(projectDir, 'routes', 'junk.mjs'),
+        "export default {\n" +
+        "  path: '/api/junk',\n" +
+        '  methods: {\n' +
+        '    GET: async (ctx) => {\n' +
+        "      const kind = ctx.url.searchParams.get('kind');\n" +
+        "      if (kind === 'string') return 'not an array';\n" +
+        "      if (kind === 'undef') return undefined;\n" +
+        "      if (kind === 'weird') return [999, 'x'];\n" +
+        '      return [200];\n' +
+        '    },\n' +
+        '  },\n' +
+        '};\n');
+      const { port, stop } = await bootServer(t, projectDir);
+      try {
+        for (const kind of ['string', 'undef', 'weird']) {
+          const res = await fetch(`http://127.0.0.1:${port}/api/junk?kind=${kind}`, { signal: AbortSignal.timeout(5_000) });
+          assert.equal(res.status, 500, `${kind} must be a 500`);
+          const body = await res.json();
+          if (kind === 'weird') {
+            assert.equal(body, 'x'); // 999 clamps to 500; the payload still goes out verbatim
+          } else {
+            assert.match(String(body.error), /invalid result/); // no "not iterable" internals
+          }
+        }
+        const noPayload = await fetch(`http://127.0.0.1:${port}/api/junk`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(noPayload.status, 200); // [200] with no payload: "null", not a TypeError
+        assert.equal(await noPayload.text(), 'null');
+        const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
+        assert.equal(health.status, 200);
+      } finally {
+        await stop();
       }
-    }
-    const noPayload = await fetch(`http://127.0.0.1:${port}/api/junk`, { signal: AbortSignal.timeout(5_000) });
-    assert.equal(noPayload.status, 200); // [200] with no payload: "null", not a TypeError
-    assert.equal(await noPayload.text(), 'null');
-    const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
-    assert.equal(health.status, 200);
-  } finally {
-    await stop();
+    });
   }
 });
 
