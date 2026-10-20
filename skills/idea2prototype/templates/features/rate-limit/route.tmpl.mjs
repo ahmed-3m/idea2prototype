@@ -3,9 +3,7 @@
 // Compose into any route handler: import { rateLimit } from './ratelimit.mjs'
 //   methods: { GET: rateLimit({ max: 10, windowMs: 60_000 })(async (ctx) => [200, { ok: true }]) }
 
-const buckets = new Map(); // key -> { count, resetAt }
 const CLEANUP_INTERVAL_MS = 60_000;
-let lastCleanup = 0;
 
 /**
  * Wrap a route handler with a per-key fixed-window limiter.
@@ -15,8 +13,12 @@ let lastCleanup = 0;
  * e.g. keyFn: (ctx) => ctx.req.headers['x-forwarded-for'] ?? 'local'.
  * Over-limit requests get 429 + Retry-After; allowed ones pass
  * through with X-RateLimit-* headers merged into the response.
+ * Each rateLimit({...}) instance owns its OWN buckets: independently
+ * configured wrappers never drain each other's budget.
  */
 export function rateLimit({ max = 60, windowMs = 60_000, keyFn } = {}) {
+  const buckets = new Map(); // key -> { count, resetAt }
+  let lastCleanup = 0;
   return (handler) => async (ctx) => {
     const key = keyFn ? keyFn(ctx) : (ctx.req?.socket?.remoteAddress ?? 'local');
     const now = Date.now();
