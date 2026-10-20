@@ -60,10 +60,31 @@ async function cmdNew(rest) {
   if (!/^[a-z0-9][a-z0-9-_]*$/.test(slug)) {
     die(`invalid directory name "${slug}" — use letters, digits, dashes, underscores`);
   }
+  // Windows reserved device names (CON, NUL, COM1-9, ...) create directories
+  // PowerShell cannot even enter. Reject on every platform so a scaffold
+  // stays portable, not just usable where it was created.
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(slug)) {
+    die(`"${slug}" is a reserved Windows device name — pick a different directory name`);
+  }
+  if (slug.length > 200) {
+    die(`directory name too long (${slug.length} chars, max 200) — nested scaffold files can exceed Windows MAX_PATH`);
+  }
   const name = (opts.name ?? basename(resolve(dir))).replace(/[<>]/g, '');
   const idea = opts.idea ?? '(describe the idea in one sentence)';
+  // --name/--idea land verbatim in the JSON manifest and generated files; a
+  // quote or backslash would poison the manifest AFTER all files are on disk.
+  // Reject before writing anything.
+  for (const [flag, value] of [['--name', name], ['--idea', idea]]) {
+    if (/["\\\u0000-\u001f]/.test(value)) {
+      die(`invalid ${flag} value — quotes, backslashes, and control characters are not allowed`);
+    }
+  }
 
   const target = resolve(process.cwd(), dir);
+  const parent = dirname(target);
+  if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+    die(`cannot create "${dir}" — parent ${parent} does not exist or is not a directory`);
+  }
   if (existsSync(target) && readdirSyncSafe(target).length > 0) {
     die(`"${target}" exists and is not empty — idea2prototype never overwrites existing files`);
   }
@@ -236,7 +257,7 @@ async function cmdAdd(rest) {
 // check / verify — the compact verdict
 // ---------------------------------------------------------------------------
 async function cmdCheck(rest) {
-  const opts = parseFlags(rest, []);
+  const opts = parseFlags(rest, [], ['json']);
   await loadMarker(); // must run inside a idea2prototype project
   return runChecks(process.cwd(), 'json' in opts, 'check');
 }
@@ -244,12 +265,13 @@ async function cmdCheck(rest) {
 // verify: run the same verdict on ANY Node project — used to judge projects
 // this tool never scaffolded (benchmark control arm, external code).
 async function cmdVerify(rest) {
-  const dir = rest.find((a) => !a.startsWith('--'));
+  const opts = parseFlags(rest, [], ['json']);
+  const dir = opts._[0];
   const target = resolve(process.cwd(), dir ?? '.');
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     die(`no such directory: ${target}`);
   }
-  return runChecks(target, rest.includes('--json'), 'verify');
+  return runChecks(target, 'json' in opts, 'verify');
 }
 
 async function runChecks(projectDir, asJson, mode = 'check') {
@@ -440,6 +462,18 @@ async function stepTests(projectDir, syntaxPassed) {
     res = spawnSync(process.execPath, ['--test', ...fileArgs], spawnOpts);
     out = capture(res);
   }
+  // A synchronous infinite loop blocks the event loop, so node --test's own
+  // --test-timeout never fires — the spawn budget above is the only bound.
+  // Report that as a verdict instead of leaking spawn plumbing ("? failed
+  // of ?" + "spawnSync ... ETIMEDOUT").
+  if (res.error?.code === 'ETIMEDOUT') {
+    return {
+      name: 'tests',
+      status: 'fail',
+      detail: `tests timed out after ${Math.round(spawnOpts.timeout / 1000)}s — no summary produced`,
+      notes: ['a test file blocked past the per-run budget — infinite loop or hung worker?'],
+    };
+  }
   const counts = {};
   for (const m of out.matchAll(/^# (tests|pass|fail|skipped|cancelled) (\d+)$/gm)) counts[m[1]] = Number(m[2]);
 
@@ -560,7 +594,8 @@ async function bootServer(projectDir, marker) {
 // ---------------------------------------------------------------------------
 // list / help
 // ---------------------------------------------------------------------------
-async function cmdList() {
+async function cmdList(rest) {
+  parseFlags(rest, []);
   const templates = (await readdir(TEMPLATES_DIR, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name !== 'features')
     .map((d) => d.name);
@@ -571,8 +606,9 @@ async function cmdList() {
 // map — compact repo map (paths + LOC + exports) so an agent can decide what
 // to read instead of loading whole files into context.
 async function cmdMap(rest) {
-  const dir = rest.find((a) => !a.startsWith('--'));
-  const asJson = rest.includes('--json');
+  const opts = parseFlags(rest, [], ['json']);
+  const dir = opts._[0];
+  const asJson = 'json' in opts;
   const root = resolve(process.cwd(), dir ?? '.');
   if (!existsSync(root) || !statSync(root).isDirectory()) die(`no such directory: ${root}`);
 
@@ -644,14 +680,25 @@ const withTimeout = (promise, ms, label) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
-function parseFlags(args, valueFlags) {
+function parseFlags(args, valueFlags, booleanFlags = []) {
   const out = { _: [] };
+  const allowed = [
+    ...valueFlags.map((f) => `--${f} <value>`),
+    ...booleanFlags.map((f) => `--${f}`),
+  ].join(', ') || 'none';
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (valueFlags.includes(key)) out[key] = args[++i];
-      else out[key] = true;
+      if (valueFlags.includes(key)) {
+        const val = args[++i];
+        if (val === undefined || val.startsWith('--')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
+        out[key] = val;
+      } else if (booleanFlags.includes(key)) {
+        out[key] = true;
+      } else {
+        die(`unknown flag "${arg}" (allowed: ${allowed})`);
+      }
     } else {
       out._.push(arg);
     }
@@ -755,7 +802,7 @@ try {
     case 'check': await cmdCheck(rest); break;
     case 'verify': await cmdVerify(rest); break;
     case 'map': await cmdMap(rest); break;
-    case 'list': await cmdList(); break;
+    case 'list': await cmdList(rest); break;
     case 'version': case '--version': case '-v': SAY(VERSION); break;
     case 'help': case undefined: case '--help': case '-h': help(); break;
     default: die(`unknown command "${command}" — run: idea2prototype help`);

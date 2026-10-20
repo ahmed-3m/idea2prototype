@@ -639,6 +639,88 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
   );
 });
 
+// #52/#53/#57: everything `new` validates happens BEFORE any file is written,
+// and unknown flags die on every command instead of being silently ignored.
+test('new rejects reserved Windows device names and over-long names before writing', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-names-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  for (const bad of ['CON', 'nul', 'Aux', 'com1', 'lpt9']) {
+    await assert.rejects(
+      i2p(['new', bad], { cwd: base }),
+      (err) => /reserved Windows device name/i.test(err.stderr ?? ''),
+    );
+  }
+  await assert.rejects(
+    i2p(['new', 'a'.repeat(201)], { cwd: base }),
+    (err) => /directory name too long/.test(err.stderr ?? ''),
+  );
+  assert.deepEqual(await readdir(base), []); // nothing scaffolded by any attempt
+});
+
+test('new fails on quote/backslash --name or --idea before writing any files', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-badval-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await assert.rejects(
+    i2p(['new', 'proj', '--name', 'x"y'], { cwd: base }),
+    (err) => /invalid --name value/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'proj', '--idea', 'say "hi"'], { cwd: base }),
+    (err) => /invalid --idea value/.test(err.stderr ?? ''),
+  );
+  assert.deepEqual(await readdir(base), []);
+});
+
+test('unknown flags die with the allowed list instead of being ignored', async (t) => {
+  const dir = await scaffold(t, { template: 'cli' });
+  await assert.rejects(
+    i2p(['check', '--frobnicate'], { cwd: dir }),
+    (err) => /unknown flag "--frobnicate" \(allowed: --json\)/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['new', 'x', '--nope'], { cwd: dir }),
+    (err) => /unknown flag "--nope"/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['list', '--nope'], { cwd: HERE }),
+    (err) => /unknown flag "--nope" \(allowed: none\)/.test(err.stderr ?? ''),
+  );
+  await assert.rejects(
+    i2p(['map', '--nope'], { cwd: HERE }),
+    (err) => /unknown flag "--nope" \(allowed: --json\)/.test(err.stderr ?? ''),
+  );
+  // a value flag with no value (or followed by another flag) is not silently skipped
+  await assert.rejects(
+    i2p(['new', 'x', '--template'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+});
+
+test('new reports an unusable parent directory instead of a raw ENOENT', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'i2p-parent-'));
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(join(base, 'notadir'), 'a file, not a directory');
+  await assert.rejects(
+    i2p(['new', 'notadir/sub'], { cwd: base }),
+    (err) => /does not exist or is not a directory/.test(err.stderr ?? '') && !/ENOENT/.test(err.stderr ?? ''),
+  );
+});
+
+// #57.3: a synchronous infinite loop blocks the event loop, so node --test's
+// own --test-timeout can never fire — the engine's spawn budget is the only
+// bound, and its verdict must read as a timeout, not spawn plumbing.
+test('verify reports a hung test run as a timeout verdict, not spawn plumbing', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-hang-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(join(dir, 'tests', 'hang.test.mjs'), 'while (true) {}\n');
+  await assert.rejects(
+    i2p(['verify', dir], { cwd: HERE }),
+    (err) => /tests timed out after \d+s — no summary produced/.test(err.stdout ?? '')
+      && !/spawnSync/.test(err.stdout ?? '') && !/\? failed of \?/.test(err.stdout ?? ''),
+  );
+});
+
 test('npm bin shim runs the engine', async () => {
   const bin = fileURLToPath(new URL('../bin/i2p.mjs', import.meta.url));
   const { stdout } = await run(process.execPath, [bin, 'version'], { timeout: 30_000 });
