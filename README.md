@@ -15,7 +15,7 @@ Idea2Prototype check — PASS (3/3)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
-**Status:** v0.8.0 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
+**Status:** v0.9.0 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails).
 
@@ -56,25 +56,25 @@ Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON A
 
 ## Quickstart
 
-**Any agent or plain shell — works from a clean clone:**
+**Any agent or plain shell — npx straight off npmjs, no clone needed:**
+
+```bash
+npx @ahmed-3m/idea2prototype new my-app --template web --name "My App" --idea "recipe box"
+cd my-app && npm start          # http://127.0.0.1:3000
+npm run check                   # the verdict above
+npx @ahmed-3m/idea2prototype add api-crud --resource recipes
+npm run check                   # still PASS — now with CRUD tests
+```
+
+**From a clean clone** (offline / air-gapped, or pinning the engine alongside the project):
 
 ```bash
 git clone https://github.com/ahmed-3m/idea2prototype
 node idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start          # http://127.0.0.1:3000
-npm run check                   # the verdict above
-node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes
-npm run check                   # still PASS — now with CRUD tests
+cd my-app && npm start && node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes && npm run check
 ```
 
-**Using npx** the same session is shorter:
-
-```bash
-npx @ahmed-3m/idea2prototype new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start && npx @ahmed-3m/idea2prototype add api-crud --resource recipes && npm run check
-```
-
-It is also mirrored on the GitHub Packages registry as `@ahmed-3m/idea2prototype` (published automatically per release) — note that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as a mirror, not the primary channel.
+Every release publishes `@ahmed-3m/idea2prototype` to npmjs.org — the primary channel — and mirrors it on the GitHub Packages registry under the same name; that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as the mirror.
 
 **ZCode plugin:** add this repo's marketplace, install `idea2prototype`, then pick the skill in the composer or use `/proto-new a recipe box with search`.
 

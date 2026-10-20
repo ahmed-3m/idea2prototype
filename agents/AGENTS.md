@@ -2,18 +2,20 @@
 
 Copy this file into any project where your coding agent should build with idea2prototype. Works with any agent that reads AGENTS.md conventions.
 
-You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool. Use it instead of hand-writing scaffolding. If the npm package isn't installed or available, run the engine directly instead of `npx idea2prototype`: `node <path-to-idea2prototype-repo>/skills/idea2prototype/scripts/idea2prototype.mjs <command>`.
+You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool. Use it instead of hand-writing scaffolding. If the npm package isn't installed or available, run the engine directly instead of `npx @ahmed-3m/idea2prototype`: `node <path-to-idea2prototype-repo>/skills/idea2prototype/scripts/idea2prototype.mjs <command>`.
 
 ## Commands
 
-- `npx idea2prototype new <dir> --template web|api|cli|worker|library` — scaffold a running, tested project (~0 tokens vs 10–30k hand-written)
-- `npx idea2prototype add api-crud --resource <name>` — JSON-file CRUD resource + roundtrip tests
-- `npx idea2prototype add auth-local` — register/login/logout/me (scrypt + signed cookies) + tests; `requireAuth` protects other routes
-- `npx idea2prototype add upload` — multipart file uploads + fetch-back + tests
-- `npx idea2prototype add rate-limit` — per-key fixed-window limiter (429 + Retry-After headers); `rateLimit()` wraps any handler
-- `npx idea2prototype add cors` — CORS wrapper (preflight + access-control-* headers, origin allowlists); `cors()` wraps any handler
+- `npx @ahmed-3m/idea2prototype new <dir> --template web|api|cli|worker|library` — scaffold a running, tested project (~0 tokens vs 10–30k hand-written)
+- `npx @ahmed-3m/idea2prototype add api-crud --resource <name>` — JSON-file CRUD resource + roundtrip tests
+- `npx @ahmed-3m/idea2prototype add auth-local` — register/login/logout/me (scrypt + signed cookies) + tests; `requireAuth` protects other routes
+- `npx @ahmed-3m/idea2prototype add upload` — multipart file uploads + fetch-back + tests
+- `npx @ahmed-3m/idea2prototype add rate-limit` — per-key fixed-window limiter (429 + Retry-After headers); `rateLimit()` wraps any handler
+- `npx @ahmed-3m/idea2prototype add cors` — CORS wrapper (preflight + access-control-* headers, origin allowlists); `cors()` wraps any handler
+- `npx @ahmed-3m/idea2prototype add sse` — Server-Sent Events stream (`GET /api/events`) + heartbeats
+- `npx @ahmed-3m/idea2prototype add worker-jobs` — persistent background job queue (`data/jobs.json`, 3 attempts) with demo routes
 - `npm run check` (inside a project) — syntax + tests + boot, ~10-line verdict
-- `npx idea2prototype map` — paths + LOC + exports; read this before opening files
+- `npx @ahmed-3m/idea2prototype map` — paths + LOC + exports; read this before opening files
 
 ## Workflow
 
