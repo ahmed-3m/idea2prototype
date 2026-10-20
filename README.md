@@ -17,6 +17,8 @@ Idea2Prototype check — PASS (3/3)
 
 **Status:** v1.0.0 · actively maintained · 1.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
+> **Idea still fuzzy?** Start one stage earlier with [brainstorm2idea](https://github.com/ahmed-3m/brainstorm2idea) — a Socratic dialogue turns raw thought into a machine-linted `brief.md`, then hands off directly into `i2p new`.
+
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails).
 
 ## Why
