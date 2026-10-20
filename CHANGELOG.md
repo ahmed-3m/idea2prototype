@@ -9,9 +9,23 @@ Fixes for the critical + high findings of the 2026-10-20 repo review:
 - Fix: `verify`/`check` boot the server even when no tests exist — a `start()` that throws used to verify PASS on syntax alone. Boot still skips after a syntax failure (structured `cause` on the tests step, no string coupling).
 - Fix: `verify` accepts a foreign `start()` that returns a bare `http.Server` (port via `address()`, callback-style close) and never lets a throwing/hanging `close()` replace the verdict — it crashed with `app.close(...).catch is not a function` before printing anything.
 - Fix: boot runs with the project as cwd (as the tests step already did), so `verify <dir>` from elsewhere boots the same app as `verify` from inside — scaffolds used to boot with no routes and no `public/`, foreign servers failed on cwd-relative reads.
-- Fix: `rateLimit()` limiters each own their buckets — one shared map let traffic on a generous route exhaust a strict route's budget for the same client.
 - Fix: `api-crud` POST ignores client-sent `id`/`createdAt` (two POSTs with the same `id` created duplicates, the second unreachable); PUT keeps `createdAt` too. SKILL.md/README composition snippets follow the same body-first pattern.
-- Tests: regression test per finding (engine suite + the generated template tests that every scaffold runs).
+- Tests: regression test per finding above (engine suite + the generated template tests that every scaffold runs). The review's seventh finding — `rateLimit()` sharing one bucket map — was fixed independently on main and shipped in 1.0.0.
+
+## 1.0.0
+
+First stable release. The scaffold contract — route objects, check/verify verdicts, `add`-module shapes — is frozen as-is; 1.x commits to additive changes only.
+
+- Stress: every finding of the 2026-10-20 stress test (#49–#60) triaged and resolved. Data stores that fail to parse are quarantined (`data/<name>.json.corrupt-<ts>`, original bytes preserved) instead of silently wiped; single-writer and stateless-token semantics documented in the README; `ci.yml` runs with minimal permissions; README status line pinned by CI.
+- Fix: `verify` (judge mode) discovers tests by node:test's own conventions (`*.test.{js,mjs,cjs}`, `test-*.js`, `*-test.js`/`*_test.js`, `test.js`, and everything under a `test/` dir, at any depth) — no more false PASS when failing tests live outside `tests/*.test.mjs` — and never reads or executes anything under `uploads/`, `data/`, `dist/`, `coverage/`, or `node_modules/`. The verdict header names its mode, boot-skip names the real cause, and an empty directory fails.
+- Fix: `new` validates everything before writing a single file — reserved Windows device names (CON, NUL, COM1–9, …) and a 200-char cap apply to the final directory name AND every path component that will be created; quotes/backslashes/control characters in `--name`/`--idea` die instead of poisoning the JSON manifest mid-scaffold.
+- Fix: the CLI never silently ignores input it doesn't understand — unknown flags, empty or flag-like flag values, and extra positional arguments die with the allowed list on every command; nested `new sub/proj` (missing parents created) works while an unusable parent dies with a readable message; a hung test run reports a `tests timed out` verdict on every supported Node (22's file-level runner timeout and 24's spawn-budget timeout both covered).
+- Fix: `rateLimit({...})` instances own their buckets — independently configured wrappers no longer drain one shared budget (#54).
+- Fix: the server templates answer oversize bodies with 413 before destroying the socket (up to 2× the limit drained so the 413 can be delivered; beyond that destroyed to bound the cost), turn contract-violating handler returns into clean 500s, clamp non-standard statuses, and send `null` for `[status]`-only returns. Both web and api templates are covered by live e2e tests.
+- Fix: the package identity is scoped everywhere in-repo — `package.json` is `@ahmed-3m/idea2prototype` (what the release pipeline actually publishes); `publish.yml` no longer rewrites the name at publish time; tarball/global installs and the engine's registry-pin detection agree (pinned by a consistency test).
+- CI: SHA-pinned actions upgraded to current majors (checkout v7.0.1, setup-node v7.1.0) plus weekly Dependabot bump-PRs so the pins stop rotting; nothing auto-merges.
+- Benchmark: the 10-spec paired benchmark set is complete (this release archives specs 5–6 and 8–10: quiz, pomodoro, echo chat, habit tracker, word-counter CLI; spec 7 landed in 0.9.0). Across n=10: hand-written LOC −10%…−64% on 7 of 8 build-type specs (spec 6 at parity) and generated tests 2–3× the control's (parity on spec 6), full-depth verify vs. the control's recurring boot-skip; wall-clock split honestly, with the from-scratch arm faster on several small builds. All rubrics pre-registered; all judges mechanical.
+- Tests: engine + consistency suite 46 → 69.
 
 ## 0.9.1
 

@@ -72,3 +72,19 @@ test('the npm bin target exists', async () => {
     );
   }
 });
+
+test('one artifact, one name: package identity is scoped everywhere', async () => {
+  // The repo package.json used to be unscoped ("idea2prototype") and
+  // publish.yml renamed it at publish time — so `npm pack` / `npm i -g` from
+  // a checkout produced UNSCOPED installs that the engine's registry-pin
+  // check never matched (#56). The scoped name must now be the repo's real
+  // name, with no publish-time rename hack to drift out of sync.
+  const PKG_NAME = /const PKG_NAME = '([^']+)'/.exec(engineSource)?.[1];
+  assert.ok(PKG_NAME, 'engine PKG_NAME not found');
+  const packageJson = await readJson(join(ROOT, 'package.json'));
+  assert.equal(packageJson.name, PKG_NAME, 'package.json name must match the engine PKG_NAME');
+  assert.ok(packageJson.name.startsWith('@'), 'package name must be scoped');
+
+  const publishYml = await readFile(join(ROOT, '.github/workflows/publish.yml'), 'utf8');
+  assert.doesNotMatch(publishYml, /npm pkg set/, 'publish.yml must not rename the package at publish time');
+});

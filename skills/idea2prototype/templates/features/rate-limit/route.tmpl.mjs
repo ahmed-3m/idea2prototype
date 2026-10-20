@@ -13,10 +13,10 @@ const CLEANUP_INTERVAL_MS = 60_000;
  * e.g. keyFn: (ctx) => ctx.req.headers['x-forwarded-for'] ?? 'local'.
  * Over-limit requests get 429 + Retry-After; allowed ones pass
  * through with X-RateLimit-* headers merged into the response.
+ * Each rateLimit({...}) instance owns its OWN buckets: independently
+ * configured wrappers never drain each other's budget.
  */
 export function rateLimit({ max = 60, windowMs = 60_000, keyFn } = {}) {
-  // Buckets belong to THIS limiter: a shared map would let traffic on one
-  // wrapped route (say max 100) spend another route's budget (max 5).
   const buckets = new Map(); // key -> { count, resetAt }
   let lastCleanup = 0;
   return (handler) => async (ctx) => {

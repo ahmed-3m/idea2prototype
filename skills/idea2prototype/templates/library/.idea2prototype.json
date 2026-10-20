@@ -1,6 +1,6 @@
 {
   "tool": "idea2prototype",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "template": "library",
   "name": "{{name}}",
   "slug": "{{slug}}",

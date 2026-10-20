@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.9.1';
+const VERSION = '1.0.0';
 const PKG_NAME = '@ahmed-3m/idea2prototype';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
@@ -49,6 +49,7 @@ async function cmdNew(rest) {
   const opts = parseFlags(rest, ['template', 'name', 'idea']);
   const dir = opts._[0];
   if (!dir) die('usage: idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]');
+  checkPositionalCount(opts, 1, 'new takes one directory name (new <dir>)');
 
   const template = opts.template ?? 'web';
   const templateDir = join(TEMPLATES_DIR, template);
@@ -60,10 +61,47 @@ async function cmdNew(rest) {
   if (!/^[a-z0-9][a-z0-9-_]*$/.test(slug)) {
     die(`invalid directory name "${slug}" — use letters, digits, dashes, underscores`);
   }
+  // Windows reserved device names (CON, NUL, COM1-9, ...) create directories
+  // PowerShell cannot even enter. Reject on every platform so a scaffold
+  // stays portable, not just usable where it was created.
+  const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+  if (RESERVED.test(slug)) {
+    die(`"${slug}" is a reserved Windows device name — pick a different directory name`);
+  }
+  if (slug.length > 200) {
+    die(`directory name too long (${slug.length} chars, max 200) — nested scaffold files can exceed Windows MAX_PATH`);
+  }
+  // Same portability bar for every component `new` may CREATE: without this,
+  // `new con/proj` scaffolds inside a reserved-name dir via the back door.
+  for (const part of dir.split(/[\\/]+/).filter(Boolean).slice(0, -1)) {
+    const component = part.toLowerCase();
+    if (RESERVED.test(component)) {
+      die(`"${part}" is a reserved Windows device name — pick a different directory name`);
+    }
+    if (component.length > 200) {
+      die(`directory name too long (${component.length} chars, max 200) — nested scaffold files can exceed Windows MAX_PATH`);
+    }
+  }
   const name = (opts.name ?? basename(resolve(dir))).replace(/[<>]/g, '');
   const idea = opts.idea ?? '(describe the idea in one sentence)';
+  // --name/--idea land verbatim in the JSON manifest and generated files; a
+  // quote or backslash would poison the manifest AFTER all files are on disk.
+  // Reject before writing anything.
+  for (const [flag, value] of [['--name', name], ['--idea', idea]]) {
+    if (/["\\\u0000-\u001f]/.test(value)) {
+      die(`invalid ${flag} value — quotes, backslashes, and control characters are not allowed`);
+    }
+  }
 
   const target = resolve(process.cwd(), dir);
+  // cp(recursive) creates missing intermediate parents, so nested `new sub/proj`
+  // is a supported input — create them here, where an unusable path (a file in
+  // the prefix, no permissions) dies with a readable message instead of ENOENT.
+  try {
+    await mkdir(dirname(target), { recursive: true });
+  } catch (err) {
+    die(`cannot create "${dir}" — parent path does not exist or is not a directory${err?.code ? ` (${err.code})` : ''}`);
+  }
   if (existsSync(target) && readdirSyncSafe(target).length > 0) {
     die(`"${target}" exists and is not empty — idea2prototype never overwrites existing files`);
   }
@@ -211,6 +249,7 @@ const RESERVED_RESOURCES = new Map([
 async function cmdAdd(rest) {
   const feature = rest[0]?.startsWith('--') ? undefined : rest[0];
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
+  checkPositionalCount(opts, 0, 'add takes one feature name (add <feature>)');
   const available = Object.keys(FEATURES).join(', ');
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
   const def = FEATURES[feature];
@@ -258,7 +297,8 @@ async function cmdAdd(rest) {
 // check / verify — the compact verdict
 // ---------------------------------------------------------------------------
 async function cmdCheck(rest) {
-  const opts = parseFlags(rest, []);
+  const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 0, 'check takes no arguments — run it from inside the project');
   await loadMarker(); // must run inside a idea2prototype project
   return runChecks(process.cwd(), 'json' in opts, 'check');
 }
@@ -266,12 +306,14 @@ async function cmdCheck(rest) {
 // verify: run the same verdict on ANY Node project — used to judge projects
 // this tool never scaffolded (benchmark control arm, external code).
 async function cmdVerify(rest) {
-  const dir = rest.find((a) => !a.startsWith('--'));
+  const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 1, 'verify takes one optional directory (verify [dir])');
+  const dir = opts._[0];
   const target = resolve(process.cwd(), dir ?? '.');
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     die(`no such directory: ${target}`);
   }
-  return runChecks(target, rest.includes('--json'), 'verify');
+  return runChecks(target, 'json' in opts, 'verify');
 }
 
 async function runChecks(projectDir, asJson, mode = 'check') {
@@ -463,6 +505,23 @@ async function stepTests(projectDir, syntaxPassed) {
     res = spawnSync(process.execPath, ['--test', ...fileArgs], spawnOpts);
     out = capture(res);
   }
+  // A hung test run surfaces two ways, by Node version. 22's runner enforces
+  // --test-timeout at the FILE level: a top-level infinite loop is killed by
+  // the runner itself (~15s, "testTimeoutFailure" + "# cancelled 1", clean
+  // exit). 24's runner never fires there, so the spawn budget is the only
+  // bound (ETIMEDOUT, no summary). Both must read as a timeout verdict —
+  // never "? failed of ?" or spawn plumbing.
+  const fileTimeoutMs = /test timed out after (\d+)ms/.exec(out)?.[1];
+  if (res.error?.code === 'ETIMEDOUT' || fileTimeoutMs !== undefined) {
+    return {
+      name: 'tests',
+      status: 'fail',
+      detail: res.error?.code === 'ETIMEDOUT'
+        ? `tests timed out after ${Math.round(spawnOpts.timeout / 1000)}s — no summary produced`
+        : `tests timed out — the runner's own timeout killed the blocked test (after ${fileTimeoutMs}ms)`,
+      notes: ['a test file blocked past every bound — infinite loop, hung worker, or slower than the per-test budget?'],
+    };
+  }
   const counts = {};
   for (const m of out.matchAll(/^# (tests|pass|fail|skipped|cancelled) (\d+)$/gm)) counts[m[1]] = Number(m[2]);
 
@@ -622,7 +681,9 @@ async function probeServer(app, marker, started) {
 // ---------------------------------------------------------------------------
 // list / help
 // ---------------------------------------------------------------------------
-async function cmdList() {
+async function cmdList(rest) {
+  const opts = parseFlags(rest, []);
+  checkPositionalCount(opts, 0, 'list takes no arguments');
   const templates = (await readdir(TEMPLATES_DIR, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name !== 'features')
     .map((d) => d.name);
@@ -633,8 +694,10 @@ async function cmdList() {
 // map — compact repo map (paths + LOC + exports) so an agent can decide what
 // to read instead of loading whole files into context.
 async function cmdMap(rest) {
-  const dir = rest.find((a) => !a.startsWith('--'));
-  const asJson = rest.includes('--json');
+  const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 1, 'map takes one optional directory (map [dir])');
+  const dir = opts._[0];
+  const asJson = 'json' in opts;
   const root = resolve(process.cwd(), dir ?? '.');
   if (!existsSync(root) || !statSync(root).isDirectory()) die(`no such directory: ${root}`);
 
@@ -706,19 +769,37 @@ const withTimeout = (promise, ms, label) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
-function parseFlags(args, valueFlags) {
+function parseFlags(args, valueFlags, booleanFlags = []) {
   const out = { _: [] };
+  const allowed = [
+    ...valueFlags.map((f) => `--${f} <value>`),
+    ...booleanFlags.map((f) => `--${f}`),
+  ].join(', ') || 'none';
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (valueFlags.includes(key)) out[key] = args[++i];
-      else out[key] = true;
+      if (valueFlags.includes(key)) {
+        const val = args[++i];
+        if (val === undefined || val === '' || val.startsWith('-')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
+        out[key] = val;
+      } else if (booleanFlags.includes(key)) {
+        out[key] = true;
+      } else {
+        die(`unknown flag "${arg}" (allowed: ${allowed})`);
+      }
     } else {
       out._.push(arg);
     }
   }
   return out;
+}
+
+// Positionals beyond what a command consumes die instead of being silently
+// ignored — `check ./proj` that quietly ignores ./proj is a silent wrong answer.
+function checkPositionalCount(opts, max, what) {
+  const extra = opts._[max];
+  if (extra !== undefined) die(`unexpected argument "${extra}" — ${what}`);
 }
 
 // Canonical marker reader: null when absent or unparseable.
@@ -817,7 +898,7 @@ try {
     case 'check': await cmdCheck(rest); break;
     case 'verify': await cmdVerify(rest); break;
     case 'map': await cmdMap(rest); break;
-    case 'list': await cmdList(); break;
+    case 'list': await cmdList(rest); break;
     case 'version': case '--version': case '-v': SAY(VERSION); break;
     case 'help': case undefined: case '--help': case '-h': help(); break;
     default: die(`unknown command "${command}" — run: idea2prototype help`);
