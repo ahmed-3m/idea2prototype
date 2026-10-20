@@ -1,6 +1,6 @@
 {
   "name": "@ahmed-3m/idea2prototype",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Turn ideas into tested prototypes \u2014 token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
   "type": "module",
   "license": "MIT",

@@ -1,7 +1,7 @@
 // Idea2Prototype feature: upload — multipart/form-data file uploads with a
 // zero-dependency parser. Files land in uploads/, served back by id.
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, join, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
@@ -85,7 +85,8 @@ export default [
     methods: {
       GET: async ({ params }) => {
         const full = join(UPLOAD_DIR, params.name);
-        if (!full.startsWith(UPLOAD_DIR)) return [400, { error: 'bad path' }];
+        // sep-boundary: without it, a sibling like uploads-x/ would pass the prefix check
+        if (!full.startsWith(UPLOAD_DIR + sep)) return [400, { error: 'bad path' }];
         try {
           const fileStat = await stat(full);
           if (!fileStat.isFile()) return [404, { error: 'not found' }];
