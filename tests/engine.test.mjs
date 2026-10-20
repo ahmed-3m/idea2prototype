@@ -566,3 +566,97 @@ test('--json output is well-formed for check, map, and verify', async (t) => {
   assert.equal(verify.status, 'PASS');
   assert.ok(!('scaffoldVersion' in verify)); // foreign project: no scaffold version in JSON
 });
+
+// Benchmark finding (spec 4/7 control arms): a foreign server.mjs that
+// listens at import time and exports nothing leaves an unreachable listener
+// in the verify process — the verdict used to print and then hang forever.
+// runChecks now exits explicitly once the verdict is complete. A 60s timeout
+// stands in for "hangs forever": without the fix this await rejects (killed).
+test('verify exits after its verdict on a foreign server that listens at import', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-hang-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'tests'));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    [
+      "import { createServer } from 'node:http';",
+      '// foreign entry point: listens at import time, exports nothing',
+      "const server = createServer((req, res) => {",
+      "  res.writeHead(200, { 'content-type': 'application/json' });",
+      "  res.end(JSON.stringify({ ok: true }));",
+      '});',
+      "server.listen(0, '127.0.0.1');",
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(dir, 'tests', 'x.test.mjs'),
+    "import test from 'node:test';\ntest('trivially passes', () => {});\n",
+  );
+  const { stdout } = await i2p(['verify', dir, '--json'], { cwd: HERE, timeout: 60_000 });
+  const verdict = JSON.parse(stdout);
+  assert.equal(verdict.status, 'PASS');
+  const boot = verdict.steps.find((s) => s.name === 'boot');
+  assert.equal(boot.status, 'skip');
+  assert.match(boot.detail, /does not export start\(\)/);
+});
+
+// Benchmark finding (spec 4 treatment arm): check ran test FILES concurrently,
+// and each file is its own process with its own in-memory cache over the same
+// JSON data store — concurrent CRUD tests lost updates nondeterministically
+// (2 leaked rows in 3 runs). stepTests now runs files one at a time, in sorted
+// order, so a later file deterministically observes an earlier file's writes.
+test('test files run serially — a later test file sees an earlier one\'s store writes', async (t) => {
+  const major = Number(process.versions.node.split('.')[0]);
+  if (major < 20) return t.skip('serialized file execution needs --test-concurrency (Node >= 20); Node 18 keeps the bare-runner fallback');
+
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
+  await writeFile(
+    join(projectDir, 'tests', 'a-seed.test.mjs'),
+    [
+      "import test from 'node:test';",
+      "import { start } from '../server.mjs';",
+      "test('seed one row (delayed — a concurrent b-observe would read first)', async () => {",
+      '  const app = await start(0);',
+      '  try {',
+      '    // Under serial file execution b-observe has not started yet; under',
+      '    // concurrent execution its immediate read happens ~3s before this',
+      '    // write lands — the delay makes the race deterministic, not flaky.',
+      '    await new Promise((resolve) => setTimeout(resolve, 3000));',
+      "    const res = await fetch(`http://127.0.0.1:${app.port}/api/todos`, {",
+      "      method: 'POST',",
+      "      headers: { 'content-type': 'application/json' },",
+      "      body: JSON.stringify({ title: 'seed-marker' }),",
+      '    });',
+      '    if (res.status !== 201) throw new Error(`seed failed: ${res.status}`);',
+      '  } finally {',
+      '    await app.close();',
+      '  }',
+      '});',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(projectDir, 'tests', 'b-observe.test.mjs'),
+    [
+      "import test from 'node:test';",
+      "import { start } from '../server.mjs';",
+      "test('observes the seeded row (runs after a-seed by sorted order)', async () => {",
+      '  const app = await start(0);',
+      '  try {',
+      '    const list = await (await fetch(`http://127.0.0.1:${app.port}/api/todos`)).json();',
+      "    if (!list.some((x) => x.title === 'seed-marker')) {",
+      "      throw new Error('seed-marker missing — test files did not run in sorted serial order');",
+      '    }',
+      '  } finally {',
+      '    await app.close();',
+      '  }',
+      '});',
+      '',
+    ].join('\n'),
+  );
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  // web template (3) + generated CRUD (2) + seed + observe
+  assert.match(stdout, /7 tests passed/);
+});

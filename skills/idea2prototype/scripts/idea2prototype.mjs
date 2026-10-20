@@ -258,6 +258,11 @@ async function runChecks(projectDir, asJson) {
     }
   }
   process.exitCode = failed.length ? 1 : 0;
+  // A foreign server.mjs that listens at import time and exports nothing
+  // (spec-4/7 benchmark controls) leaves handles we hold no reference to —
+  // the process would hang forever after the verdict. The verdict is
+  // complete, so exit explicitly instead.
+  if (steps.some((s) => s.unreachableHandles)) process.exit(process.exitCode);
 }
 
 async function stepSyntax(projectDir) {
@@ -312,7 +317,7 @@ async function stepTests(projectDir, syntaxPassed) {
   if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
   let testFiles = [];
   try {
-    testFiles = (await readdir(testDir)).filter((f) => f.endsWith('.test.mjs'));
+    testFiles = (await readdir(testDir)).filter((f) => f.endsWith('.test.mjs')).sort();
   } catch {
     return { name: 'tests', status: 'skip', detail: 'no tests/ directory' };
   }
@@ -326,9 +331,15 @@ async function stepTests(projectDir, syntaxPassed) {
   const spawnOpts = { encoding: 'utf8', timeout: 90_000, cwd: projectDir, maxBuffer: 16 * 1024 * 1024, env };
   const capture = (res) => `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
 
+  // Run test files ONE AT A TIME (--test-concurrency=1, sorted order). Each
+  // file is its own process; concurrent files each hold an in-memory cache
+  // over the same JSON data store and lose updates against each other (the
+  // spec-4 benchmark caught generated CRUD rows leaking nondeterministically).
+  // Node < 20 rejects the flag — the bare fallback below keeps today's
+  // behavior there (self-relative generated tests still pass concurrently).
   let res = spawnSync(
     process.execPath,
-    ['--test', '--test-reporter=tap', '--test-timeout=15000', ...fileArgs],
+    ['--test', '--test-reporter=tap', '--test-timeout=15000', '--test-concurrency=1', ...fileArgs],
     spawnOpts,
   );
   let out = capture(res);
@@ -390,7 +401,15 @@ async function bootServer(projectDir, marker) {
   try {
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
-      return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()' };
+      return {
+        name: 'boot',
+        status: 'skip',
+        detail: 'server.mjs does not export start()',
+        // The import itself may have started a server we hold no handle to
+        // (foreign entry points often listen at import time). runChecks
+        // exits explicitly once the verdict is printed.
+        unreachableHandles: true,
+      };
     }
     app = await withTimeout(mod.start(0), 10_000, 'server start');
     // redirect: 'manual' — never follow a redirect off the probe target; the
