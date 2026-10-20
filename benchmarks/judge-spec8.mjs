@@ -122,6 +122,10 @@ try {
   );
   c2Recorded = true;
 
+  // NOTE (external review): the frozen rubric also requires a list-shaped
+  // body here (bare array or envelope: messages/data/items/history); this
+  // judge checks 200 + stamp-presence only — outcome-neutral for the archived
+  // arms (both serve {messages:[…]}); the envelope check ships in judge-spec9.
   const hist = await fetch(historyUrl, { signal: AbortSignal.timeout(5_000) });
   const histText = hist.status === 200 ? await hist.text() : '';
   check(C3, hist.status === 200 && histText.includes(stamp));
