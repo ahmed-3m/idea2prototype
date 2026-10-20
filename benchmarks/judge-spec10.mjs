@@ -67,8 +67,13 @@ const runCli = (cmd) => spawnSync(cmd, { shell: true, cwd: projectDir, encoding:
 try {
   const ok = runCli(withFile);
   const no = runCli(noFile);
-  const guidance = /usage|help|file/i.test((no.stdout ?? '') + (no.stderr ?? ''));
-  const noCrash = !/throw|Error:[\s\S]*at\s+\S+\(/i.test((no.stdout ?? '') + (no.stderr ?? ''));
+  // Guidance must come from actual usage text; a stack trace can contain the
+  // word "file" (paths) but never a usage/help banner. A crash is any Node
+  // stack frame — an indented "at ..." line — which also catches async frames
+  // ("at async main (...)") the old Error:…at-word( regex missed.
+  const combined = (no.stdout ?? '') + (no.stderr ?? '');
+  const guidance = /^.*(usage|help)/im.test(combined) || /requires a file/i.test(combined);
+  const noCrash = !/^\s+at\s+\S/m.test(combined) && !/uncaught exception/i.test(combined);
   check(C1, ok.status === 0 && (no.status === 0 || no.status === 1) && guidance && noCrash);
   const out = ok.stdout ?? '';
   check(C2, new RegExp(`(?:words?[^0-9\\n]{0,5})${EXPECT_WORDS}\\b|(?:^|[^0-9])${EXPECT_WORDS}[^0-9\\n]{0,5}words?`, 'im').test(out));
