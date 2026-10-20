@@ -71,7 +71,9 @@ npm run check                   # still PASS — now with CRUD tests
 ```bash
 git clone https://github.com/ahmed-3m/idea2prototype
 node idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs new my-app --template web --name "My App" --idea "recipe box"
-cd my-app && npm start && node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes && npm run check
+cd my-app && npm start          # http://127.0.0.1:3000
+node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-crud --resource recipes
+npm run check                   # still PASS — now with CRUD tests
 ```
 
 Every release publishes `@ahmed-3m/idea2prototype` to npmjs.org — the primary channel — and mirrors it on the GitHub Packages registry under the same name; that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as the mirror.
