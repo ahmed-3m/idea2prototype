@@ -15,7 +15,7 @@ Idea2Prototype check — PASS (3/3)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
-**Status:** v0.9.0 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
+**Status:** v0.9.1 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails).
 
@@ -53,6 +53,8 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |
 
 Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON API + route manifest), `cli` (arg-parsed tool), `worker` (persistent job queue with retries), `library` (importable module: `createStore` + `memoAsync`). All Node >= 18.17, built-in `node:test`, zero installs — ever.
+
+**JSON stores are single-writer.** Every `data/*.json` store is an in-memory list persisted on write by ONE server process — run two servers on the same project dir and each will clobber the other's acknowledged writes on its next persist (last writer wins the whole file). A store that fails to parse on first read is never silently wiped: it is quarantined as `data/<name>.json.corrupt-<timestamp>` (the original bytes are preserved for recovery) and the process starts empty with a loud stderr note. `auth-local` sessions are stateless HMAC tokens — logout clears the browser cookie only; a copied token stays valid until it expires.
 
 ## Quickstart
 

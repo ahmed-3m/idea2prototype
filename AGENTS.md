@@ -26,4 +26,4 @@ Guidance for coding agents working on THIS repository.
 
 ## Conventions
 
-Commit style: `Loop <X>: <what and why>`. Version bumps: plugin.json + package.json + the `VERSION` const + `D:/side_hustle/opensources_gh/marketplace.json` stay in sync.
+Commit style: `Loop <X>: <what and why>`. Version bumps: plugin.json + package.json + the `VERSION` const + the README status line (CI-pinned by the consistency suite) + `D:/side_hustle/opensources_gh/marketplace.json` stay in sync.

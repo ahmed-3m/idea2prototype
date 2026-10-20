@@ -1,26 +1,56 @@
 // Idea2Prototype feature: api-crud — resource "{{resource}}"
 // Contract: handlers return [status, payload]; the server sends payload as JSON.
 // Persistence: JSON file at data/{{resource}}.json (created on first write).
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const STORE_PATH = join(process.cwd(), 'data', '{{resource}}.json');
-let cache = null;
+let ready = null; // memoized cold load: concurrent first callers share ONE array
 
-async function load() {
-  if (cache) return cache;
-  try {
-    cache = JSON.parse(await readFile(STORE_PATH, 'utf8'));
-  } catch {
-    cache = [];
+function load() {
+  if (!ready) {
+    ready = (async () => {
+      let cache = null;
+      let raw = null;
+      try {
+        raw = await readFile(STORE_PATH, 'utf8');
+      } catch (err) {
+        if (err?.code !== 'ENOENT') console.error(`[{{resource}}] could not read data store (${err?.code ?? err}) — starting empty`);
+      }
+      if (raw !== null) {
+        try {
+          cache = JSON.parse(raw);
+        } catch {
+          cache = null;
+        }
+      }
+      if (raw === null || cache === null || !Array.isArray(cache)) {
+        // A store that exists but is corrupt (unparseable, or not a list) must
+        // never be silently wiped — the next persist() would overwrite data
+        // that may still be recoverable. Quarantine it, say so loudly, start
+        // empty. If even the quarantine rename fails, do NOT pretend it is
+        // safe: the original file WILL be overwritten by the next persist.
+        if (raw !== null) {
+          const quarantine = `${STORE_PATH}.corrupt-${Date.now().toString(36)}`;
+          try {
+            await rename(STORE_PATH, quarantine);
+            console.error(`[{{resource}}] data store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+          } catch (err) {
+            console.error(`[{{resource}}] data store is corrupt AND could not be quarantined (${err?.code ?? err}) — the next write will overwrite it`);
+          }
+        }
+        cache = [];
+      }
+      return cache;
+    })();
   }
-  return cache;
+  return ready;
 }
 
 async function persist() {
   await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(cache, null, 2));
+  await writeFile(STORE_PATH, JSON.stringify(await load(), null, 2));
 }
 
 function requireObject(body) {
