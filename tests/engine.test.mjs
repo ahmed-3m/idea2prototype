@@ -517,6 +517,62 @@ test('verify boots a foreign project that serves only a static root (no /api/hea
   assert.match(stdout, /GET \/api\/health -> 404, GET \/ -> 200/);
 });
 
+// #51: verify (judge mode) must judge projects by their REAL tests — Node's
+// own conventions (test/ dir, root-level *.test.mjs) — instead of silently
+// passing when nothing lives under tests/*.test.mjs. Plus verdict semantics:
+// the header names the mode, boot-skip reasons match the actual cause, and
+// an empty directory is not a green "project".
+const FAILING_TEST = "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('deliberately failing', () => assert.equal(1, 2));\n";
+
+test('verify fails a project whose failing tests live in test/ (singular)', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-disc1-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await mkdir(join(dir, 'test'));
+  await writeFile(join(dir, 'test', 'fail.test.mjs'), FAILING_TEST);
+  await assert.rejects(
+    i2p(['verify', dir], { cwd: HERE }),
+    (err) => /FAIL/.test(err.stdout ?? '') && /deliberately failing/.test(err.stdout ?? ''),
+  );
+});
+
+test('verify fails a project whose failing tests are root-level *.test.mjs', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-disc2-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(join(dir, 'fail.test.mjs'), FAILING_TEST);
+  await assert.rejects(
+    i2p(['verify', dir], { cwd: HERE }),
+    (err) => /FAIL/.test(err.stdout ?? ''),
+  );
+});
+
+test('verify header names the mode; boot skip names the real cause; empty dir is not a project', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-disc3-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  const empty = await mkdtemp(join(tmpdir(), 'i2p-disc4-'));
+  t.after(() => rm(empty, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+
+  // empty dir: FAIL with the project step, header says "verify"
+  await assert.rejects(
+    i2p(['verify', empty], { cwd: HERE }),
+    (err) => /Idea2Prototype verify — FAIL/.test(err.stdout ?? '') && /no Node project found/.test(err.stdout ?? ''),
+  );
+
+  // sources but no tests anywhere: tests SKIP with the loud note, boot skip
+  // names the cause, verdict is syntax-only PASS — header still says verify
+  await writeFile(join(dir, 'math.mjs'), "export const add = (a, b) => a + b;\n");
+  const res = await i2p(['verify', dir], { cwd: HERE });
+  assert.match(res.stdout, /Idea2Prototype verify — PASS \(1\/3 passed\)/);
+  assert.match(res.stdout, /tests\s+SKIP\s+no test files found/);
+  assert.match(res.stdout, /if your tests live elsewhere, this verdict is syntax-only/);
+  assert.match(res.stdout, /boot\s+SKIP\s+skipped \(no tests found\)/);
+});
+
+test('check still names itself check and finds scaffolded tests/ files', async (t) => {
+  const projectDir = await scaffold(t, { template: 'cli' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /Idea2Prototype check — PASS/);
+});
+
 test('new refuses to overwrite a non-empty directory', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-refuse-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

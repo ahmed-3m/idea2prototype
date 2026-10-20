@@ -238,7 +238,7 @@ async function cmdAdd(rest) {
 async function cmdCheck(rest) {
   const opts = parseFlags(rest, []);
   await loadMarker(); // must run inside a idea2prototype project
-  return runChecks(process.cwd(), 'json' in opts);
+  return runChecks(process.cwd(), 'json' in opts, 'check');
 }
 
 // verify: run the same verdict on ANY Node project — used to judge projects
@@ -249,18 +249,24 @@ async function cmdVerify(rest) {
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     die(`no such directory: ${target}`);
   }
-  return runChecks(target, rest.includes('--json'));
+  return runChecks(target, rest.includes('--json'), 'verify');
 }
 
-async function runChecks(projectDir, asJson) {
+async function runChecks(projectDir, asJson, mode = 'check') {
   const marker = await readMarker(projectDir); // null for foreign projects (verify mode)
   const steps = [];
   const syntax = await stepSyntax(projectDir);
   steps.push(syntax);
   const tests = await stepTests(projectDir, syntax.status === 'pass');
   steps.push(tests);
-  const boot = await stepBoot(projectDir, tests.status === 'pass', marker);
+  const boot = await stepBoot(projectDir, tests.status, marker);
   steps.push(boot);
+
+  // An empty directory is not a project: judge mode must not hand out a
+  // green verdict for a dir with nothing to check (no sources, no tests).
+  if (!marker && tests.status === 'skip' && /^0 files parse clean$/.test(steps[0].detail)) {
+    steps.push({ name: 'project', status: 'fail', detail: 'no Node project found (no sources parsed, no test files)' });
+  }
 
   const failed = steps.filter((s) => s.status === 'fail');
   const summary = failed.length === 0 ? 'PASS' : 'FAIL';
@@ -278,7 +284,7 @@ async function runChecks(projectDir, asJson) {
     }, null, 2));
   } else {
     SAY(``);
-    SAY(`Idea2Prototype check — ${summary} (${passedCount}/${steps.length} passed)  [${projectDir}]`);
+    SAY(`Idea2Prototype ${mode} — ${summary} (${passedCount}/${steps.length} passed)  [${projectDir}]`);
     for (const s of steps) {
       const icon = s.status === 'pass' ? 'PASS ' : s.status === 'fail' ? 'FAIL ' : 'SKIP ';
       SAY(`  ${s.name.padEnd(7)} ${icon} ${s.detail}`);
@@ -349,22 +355,55 @@ function parsesClean(source, inputType) {
   return res.status === 0;
 }
 
-async function stepTests(projectDir, syntaxPassed) {
-  const testDir = join(projectDir, 'tests');
-  if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
-  let testFiles = [];
-  try {
-    testFiles = (await readdir(testDir)).filter((f) => f.endsWith('.test.mjs')).sort();
-  } catch {
-    return { name: 'tests', status: 'skip', detail: 'no tests/ directory' };
+// Node-convention test discovery for judge mode: `**/*.test.{js,mjs,cjs}`
+// anywhere (node_modules and dot-dirs excluded; public/ holds browser code,
+// data/ holds stores) plus EVERY .js/.mjs/.cjs under a top-level `test/`
+// directory — mirroring `node --test`'s own default discovery closely enough
+// that projects this tool never scaffolded are judged by their real tests
+// instead of silently passing with none found.
+async function discoverTestFiles(projectDir) {
+  const found = new Set();
+  const JS = /\.(js|mjs|cjs)$/;
+  async function walk(dir, depth, underTestDir) {
+    if (depth > 6) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const isTopTestDir = depth === 0 && entry.name === 'test';
+        await walk(full, depth + 1, underTestDir || isTopTestDir);
+      } else if (JS.test(entry.name) && (underTestDir || (/\.test\.(js|mjs|cjs)$/.test(entry.name) && !relative(projectDir, full).split(sep).includes('public')))) {
+        found.add(full);
+      }
+    }
   }
-  if (!testFiles.length) return { name: 'tests', status: 'skip', detail: 'no *.test.mjs files' };
+  await walk(projectDir, 0, false);
+  return [...found].sort();
+}
+
+async function stepTests(projectDir, syntaxPassed) {
+  if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
+  const testFiles = (await discoverTestFiles(projectDir)).map((f) => relative(projectDir, f));
+  if (!testFiles.length) {
+    return {
+      name: 'tests',
+      status: 'skip',
+      detail: 'no test files found',
+      notes: ['looked for **/*.test.{js,mjs,cjs} outside node_modules, and .js/.mjs/.cjs under test/ — if your tests live elsewhere, this verdict is syntax-only'],
+    };
+  }
 
   // Pass explicit file paths: glob args to `node --test` are Node >= 21 only.
   // Strip NODE_TEST_CONTEXT so a check spawned from inside a test runner
   // doesn't put the child into child-reporter mode (no TAP summary).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
-  const fileArgs = testFiles.map((f) => join('tests', f));
+  const fileArgs = testFiles.map((f) => f.split(sep).join('/'));
   // Serial execution trades wall-clock for determinism — scale the spawn
   // budget with the file count so slow-but-passing suites aren't killed
   // (90s floor, 30s per file, 5-minute ceiling).
@@ -416,8 +455,9 @@ async function stepTests(projectDir, syntaxPassed) {
   };
 }
 
-async function stepBoot(projectDir, testsPassed, marker) {
-  if (!testsPassed) return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
+async function stepBoot(projectDir, testsStatus, marker) {
+  if (testsStatus === 'fail') return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
+  if (testsStatus === 'skip') return { name: 'boot', status: 'skip', detail: 'skipped (no tests found)' };
   // Library projects have no server to probe — boot = import the public API.
   if (marker?.template === 'library') return bootLibrary(projectDir);
   return bootServer(projectDir, marker);
