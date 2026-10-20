@@ -14,11 +14,25 @@ let ready = null; // memoized cold load: concurrent first callers share ONE arra
 function load() {
   if (!ready) {
     ready = (async () => {
+      let raw = null;
       try {
-        jobs = JSON.parse(await readFile(STORE_PATH, 'utf8'));
-      } catch (err) {
-        if (err?.code !== 'ENOENT') {
-          console.error(`[jobs] could not read ${STORE_PATH} (${err?.message ?? err}) — starting empty`);
+        raw = await readFile(STORE_PATH, 'utf8');
+      } catch {} // ENOENT — first run, no store yet
+      if (raw !== null) {
+        try {
+          jobs = JSON.parse(raw);
+        } catch {
+          jobs = null;
+        }
+      }
+      if (raw === null || jobs === null || !Array.isArray(jobs)) {
+        // A store that exists but is corrupt must never be silently wiped —
+        // the next persist would overwrite recoverable job history. Quarantine
+        // it, say so loudly, start empty.
+        if (raw !== null) {
+          const quarantine = `${STORE_PATH}.corrupt-${Date.now().toString(36)}`;
+          await rename(STORE_PATH, quarantine).catch(() => {});
+          console.error(`[jobs] store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
         }
         jobs = [];
       }

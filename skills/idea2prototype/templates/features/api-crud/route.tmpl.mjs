@@ -1,7 +1,7 @@
 // Idea2Prototype feature: api-crud — resource "{{resource}}"
 // Contract: handlers return [status, payload]; the server sends payload as JSON.
 // Persistence: JSON file at data/{{resource}}.json (created on first write).
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -10,9 +10,26 @@ let cache = null;
 
 async function load() {
   if (cache) return cache;
+  let raw = null;
   try {
-    cache = JSON.parse(await readFile(STORE_PATH, 'utf8'));
-  } catch {
+    raw = await readFile(STORE_PATH, 'utf8');
+  } catch {} // no store yet — first run
+  if (raw !== null) {
+    try {
+      cache = JSON.parse(raw);
+    } catch {
+      cache = null;
+    }
+  }
+  if (raw === null || cache === null || !Array.isArray(cache)) {
+    // A store that exists but is corrupt (unparseable, or not a list) must
+    // never be silently wiped — the next persist() would overwrite data that
+    // may still be recoverable. Quarantine it, say so loudly, start empty.
+    if (raw !== null) {
+      const quarantine = `${STORE_PATH}.corrupt-${Date.now().toString(36)}`;
+      await rename(STORE_PATH, quarantine).catch(() => {});
+      console.error(`[{{resource}}] data store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+    }
     cache = [];
   }
   return cache;

@@ -44,6 +44,13 @@ test('CHANGELOG has a section for the current version', async () => {
   assert.match(changelog, new RegExp(`^## ${VERSION.replace(/\./g, '\\.')}\\s*$`, 'm'));
 });
 
+test('README status line carries the current version', async () => {
+  // v0.9.0 shipped while README still said 0.9.0's predecessor — status drift
+  // is now pinned like every other version marker.
+  const readme = await readFile(join(ROOT, 'README.md'), 'utf8');
+  assert.match(readme, new RegExp(`\\*\\*Status:\\*\\* v${VERSION.replace(/\./g, '\\.')}\\b`));
+});
+
 test('every package.json files[] entry exists in the repo', async () => {
   const packageJson = await readJson(join(ROOT, 'package.json'));
   assert.ok(packageJson.files.length > 0);

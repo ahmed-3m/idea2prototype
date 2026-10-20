@@ -3,7 +3,7 @@
 // Compose into other routes: import { requireAuth } from './auth.mjs'
 //   methods: { GET: requireAuth(async (ctx) => [200, { hello: ctx.user.username }]) }
 import { createHmac, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const USERS_FILE = join(process.cwd(), 'data', 'users.json');
@@ -16,9 +16,26 @@ let secretCache = null;
 
 async function loadUsers() {
   if (usersCache) return usersCache;
+  let raw = null;
   try {
-    usersCache = JSON.parse(await readFile(USERS_FILE, 'utf8'));
-  } catch {
+    raw = await readFile(USERS_FILE, 'utf8');
+  } catch {} // no users file yet — first run
+  if (raw !== null) {
+    try {
+      usersCache = JSON.parse(raw);
+    } catch {
+      usersCache = null;
+    }
+  }
+  if (raw === null || usersCache === null || !Array.isArray(usersCache)) {
+    // A users store that exists but is corrupt must never be silently wiped —
+    // the next register would overwrite every account. Quarantine, say so,
+    // start empty (accounts can be re-registered; the old file is preserved).
+    if (raw !== null) {
+      const quarantine = `${USERS_FILE}.corrupt-${Date.now().toString(36)}`;
+      await rename(USERS_FILE, quarantine).catch(() => {});
+      console.error(`[auth] users store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+    }
     usersCache = [];
   }
   return usersCache;
@@ -147,6 +164,11 @@ export default [
   {
     path: '/api/auth/logout',
     methods: {
+      // Clears the BROWSER cookie only. Session tokens are stateless HMAC —
+      // there is no server-side session store, so a token copied before
+      // logout keeps authenticating until it expires (SESSION_TTL_MS).
+      // Anything user-facing on top of this demo should shorten the TTL or
+      // add a server-side revocation list.
       POST: async () => [200, { ok: true }, { 'set-cookie': clearedCookie() }],
     },
   },

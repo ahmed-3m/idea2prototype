@@ -2,9 +2,9 @@
 // These are also the CI workhorse — `node --test tests/engine.test.mjs`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, writeFile, rm, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ const i2p = (args, opts = {}) => run(process.execPath, [SCRIPT, ...args], { time
 // Every scaffold-based test goes through this so the ritual exists once.
 async function scaffold(t, { template = 'web', name, idea, feature, resource } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
   await i2p([
     'new', 'app', '--template', template,
     ...(name ? ['--name', name] : []),
@@ -115,6 +115,64 @@ test('add api-crud keeps the web project green', async (t) => {
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /5 tests passed/);
+});
+
+// Regression for the corrupt-store stress finding: a data/*.json that exists
+// but does not parse must never be silently wiped by the next persist — the
+// loader quarantines it (original bytes preserved) and starts empty LOUDLY.
+// The route resolves its store from process.cwd() at import time, so the
+// scaffold's own server is booted as a subprocess with the project as cwd.
+test('a corrupt api-crud store is quarantined, not silently wiped', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'item' });
+  const garbage = Buffer.alloc(2048, 7); // valid file, invalid JSON
+  await mkdir(join(projectDir, 'data'), { recursive: true });
+  await writeFile(join(projectDir, 'data', 'item.json'), garbage);
+
+  const child = spawn(process.execPath, ['server.mjs'], { cwd: projectDir, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const stop = async () => {
+    if (child.exitCode !== null) return;
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 3_000);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+    await new Promise((r) => setTimeout(r, 300)); // let Windows release the cwd handle
+  };
+  t.after(stop); // belt — the test body also stops before returning
+  let bootLog = '';
+  child.stdout.on('data', (c) => { bootLog += c; });
+  child.stderr.on('data', (c) => { bootLog += c; });
+  const deadline = Date.now() + 15_000;
+  let port = 0;
+  while (Date.now() < deadline && !port) {
+    port = Number(/running at http:\/\/127\.0\.0\.1:(\d+)/.exec(bootLog)?.[1]);
+    if (!port) await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.ok(port, `server never booted; log: ${bootLog}`);
+
+  try {
+    const list = await (await fetch(`http://127.0.0.1:${port}/api/item`, { signal: AbortSignal.timeout(5_000) })).json();
+    assert.deepEqual(list, []); // serves empty…
+    assert.match(bootLog, /quarantined/i); // …but says so loudly
+
+    const dataDir = await readdir(join(projectDir, 'data'));
+    const quarantined = dataDir.find((f) => /^item\.json\.corrupt-/.test(f));
+    assert.ok(quarantined, `expected a quarantine file, got: ${dataDir.join(', ')}`);
+    const kept = await readFile(join(projectDir, 'data', quarantined));
+    assert.equal(kept.length, garbage.length); // original bytes preserved for recovery
+
+    await fetch(`http://127.0.0.1:${port}/api/item`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'after-garbage' }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const after = JSON.parse(await readFile(join(projectDir, 'data', 'item.json'), 'utf8'));
+    assert.equal(after.length, 1); // the new store has only the new write…
+    assert.equal(kept.length, garbage.length); // …and the quarantined data survived it
+  } finally {
+    await stop(); // kill inside the test so the scaffold's rm after-hook never races a live cwd
+  }
 });
 
 test('add auth-local keeps the web project green', async (t) => {

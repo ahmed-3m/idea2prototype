@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: CI only needs to read the repo. Without this block the
+# workflow token gets the org-default scopes (publish.yml keeps its own
+# per-job escalation for packages: write).
+permissions:
+  contents: read
+
 # Superseded runs on the same ref are cancelled — stacked pushes used to
 # queue duplicate matrix runs for outdated commits.
 concurrency:
