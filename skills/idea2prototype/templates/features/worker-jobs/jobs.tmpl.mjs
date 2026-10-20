@@ -6,7 +6,7 @@
 // enqueued (no long-lived timer; an empty queue costs nothing and never keeps
 // the server from closing). Handlers must settle: one that awaits forever
 // stalls the whole queue until the process restarts.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -36,13 +36,19 @@ function load() {
 // Writes are chained, not concurrent: enqueue and the drain both persist, and
 // two in-flight writeFile calls on the same store can finish out of order —
 // a staler snapshot written last would resurrect finished jobs as queued.
+// Each write goes to a temp file then renames into place (atomic — a crash
+// mid-write can never leave a half-written store behind), and the chain
+// recovers from a failed write instead of rejecting forever.
 let persistChain = Promise.resolve();
 function persist() {
-  persistChain = persistChain.then(async () => {
+  const write = persistChain.then(async () => {
     await mkdir(join(process.cwd(), 'data'), { recursive: true });
-    await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+    const tmp = `${STORE_PATH}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(jobs, null, 2));
+    await rename(tmp, STORE_PATH);
   });
-  return persistChain;
+  persistChain = write.catch(() => {}); // one failed write must not block later writes
+  return write;
 }
 
 // Built-in demo handlers — register your own with registerHandler().

@@ -1,6 +1,6 @@
 // Idea2Prototype worker template — zero-dependency persistent job queue (Node >= 18)
 // Jobs are persisted to data/jobs.json; failed jobs retry up to maxAttempts.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -30,14 +30,18 @@ function load() {
 
 // Writes are chained: two in-flight writeFile calls on the same store can
 // finish out of order — a staler snapshot written last would resurrect
-// finished jobs as queued.
+// finished jobs as queued. Each write goes to a temp file then renames into
+// place (atomic), and the chain recovers from a failed write.
 let persistChain = Promise.resolve();
 function persist() {
-  persistChain = persistChain.then(async () => {
+  const write = persistChain.then(async () => {
     await mkdir(join(process.cwd(), 'data'), { recursive: true });
-    await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+    const tmp = `${STORE_PATH}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(jobs, null, 2));
+    await rename(tmp, STORE_PATH);
   });
-  return persistChain;
+  persistChain = write.catch(() => {}); // one failed write must not block later writes
+  return write;
 }
 
 const HANDLERS = {
