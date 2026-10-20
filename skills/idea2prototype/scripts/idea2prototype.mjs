@@ -470,16 +470,21 @@ async function stepTests(projectDir, syntaxPassed) {
     res = spawnSync(process.execPath, ['--test', ...fileArgs], spawnOpts);
     out = capture(res);
   }
-  // A synchronous infinite loop blocks the event loop, so node --test's own
-  // --test-timeout never fires — the spawn budget above is the only bound.
-  // Report that as a verdict instead of leaking spawn plumbing ("? failed
-  // of ?" + "spawnSync ... ETIMEDOUT").
-  if (res.error?.code === 'ETIMEDOUT') {
+  // A hung test run surfaces two ways, by Node version. 22's runner enforces
+  // --test-timeout at the FILE level: a top-level infinite loop is killed by
+  // the runner itself (~15s, "testTimeoutFailure" + "# cancelled 1", clean
+  // exit). 24's runner never fires there, so the spawn budget is the only
+  // bound (ETIMEDOUT, no summary). Both must read as a timeout verdict —
+  // never "? failed of ?" or spawn plumbing.
+  const fileTimeoutMs = /test timed out after (\d+)ms/.exec(out)?.[1];
+  if (res.error?.code === 'ETIMEDOUT' || fileTimeoutMs !== undefined) {
     return {
       name: 'tests',
       status: 'fail',
-      detail: `tests timed out after ${Math.round(spawnOpts.timeout / 1000)}s — no summary produced`,
-      notes: ['a test file blocked past the per-run budget — infinite loop or hung worker?'],
+      detail: res.error?.code === 'ETIMEDOUT'
+        ? `tests timed out after ${Math.round(spawnOpts.timeout / 1000)}s — no summary produced`
+        : `tests timed out — the runner's own timeout killed the blocked test (after ${fileTimeoutMs}ms)`,
+      notes: ['a test file blocked past every bound — infinite loop, hung worker, or slower than the per-test budget?'],
     };
   }
   const counts = {};

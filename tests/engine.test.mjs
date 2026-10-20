@@ -747,14 +747,18 @@ test('new scaffolds into a nested path whose parents do not exist yet', async (t
   assert.ok(await readFile(join(base, 'sub', 'proj', '.idea2prototype.json'), 'utf8'), 'marker landed');
 });
 
-// #57.3: a synchronous infinite loop blocks the event loop, so node --test's
-// own --test-timeout can never fire — the engine's spawn budget is the only
-// bound, and its verdict must read as a timeout, not spawn plumbing.
-// COST: this test deliberately burns the full spawn budget (~90s of the ~2min
-// suite). That is the point; do not "fix" it by shortening. On POSIX the budget
-// kill reaches only the direct child (node --test), so a spinning test worker
-// may briefly outlive it — acceptable on disposable CI runners (Windows kills
-// the tree cleanly; verified locally).
+// #57.3: a hung test run must surface as a timeout verdict, not spawn
+// plumbing — and it takes TWO shapes depending on Node version: 22's runner
+// kills a top-level-blocked file itself (--test-timeout fires at file level,
+// TAP says "testTimeoutFailure"), 24's never fires so the engine's spawn
+// budget is the only bound (ETIMEDOUT, no summary). The predicate accepts
+// both; anything else ("? failed of ?", spawnSync errors) is a regression.
+// COST: on runners where the file-level timeout does not fire this test
+// deliberately burns the full spawn budget (~90s of the suite). That is the
+// point; do not "fix" it by shortening. On POSIX the budget kill reaches only
+// the direct child (node --test), so a spinning test worker may briefly
+// outlive it — acceptable on disposable CI runners (Windows kills the tree
+// cleanly; verified locally).
 test('verify reports a hung test run as a timeout verdict, not spawn plumbing', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'i2p-hang-'));
   t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
@@ -762,7 +766,7 @@ test('verify reports a hung test run as a timeout verdict, not spawn plumbing', 
   await writeFile(join(dir, 'tests', 'hang.test.mjs'), 'while (true) {}\n');
   await assert.rejects(
     i2p(['verify', dir], { cwd: HERE }),
-    (err) => /tests timed out after \d+s — no summary produced/.test(err.stdout ?? '')
+    (err) => /tests timed out/.test(err.stdout ?? '')
       && !/spawnSync/.test(err.stdout ?? '') && !/\? failed of \?/.test(err.stdout ?? ''),
   );
 });
