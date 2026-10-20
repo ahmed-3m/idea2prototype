@@ -114,7 +114,28 @@ test('add api-crud keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'todos' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /5 tests passed/);
+  assert.match(stdout, /6 tests passed/); // 3 web + 3 crud (roundtrip, server-owned ids, validation)
+});
+
+// Review finding 1: a CRUD resource over another feature's store or route is
+// refused in EITHER add order. "users" shared data/users.json with auth-local:
+// anonymous GET /api/users served salts + hashes, anonymous POST planted a
+// login-capable account. Nothing may be written on refusal.
+test('add api-crud refuses resource names another feature owns', async (t) => {
+  const projectDir = await scaffold(t, {});
+  for (const [resource, owner] of [['users', /auth-local/], ['jobs', /worker-jobs/], ['events', /sse/]]) {
+    await assert.rejects(
+      i2p(['add', 'api-crud', '--resource', resource], { cwd: projectDir }),
+      (err) => /is reserved/.test(err.stderr) && owner.test(err.stderr),
+      `--resource ${resource} must be refused`,
+    );
+    await assert.rejects(readFile(join(projectDir, 'routes', `${resource}.mjs`)), { code: 'ENOENT' });
+  }
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features, []);
+  // the safe alternative next to auth-local still works
+  await i2p(['add', 'auth-local'], { cwd: projectDir });
+  await i2p(['add', 'api-crud', '--resource', 'members'], { cwd: projectDir });
 });
 
 // Regression for the corrupt-store stress finding: a data/*.json that exists
@@ -322,7 +343,7 @@ test('stacking multiple features keeps the project green', async (t) => {
   await i2p(['add', 'rate-limit'], { cwd: projectDir });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /11 tests passed/); // 3 web + 1 auth + 2+2 crud + 3 rate-limit
+  assert.match(stdout, /13 tests passed/); // 3 web + 1 auth + 3+3 crud + 3 rate-limit
 });
 
 // Executes the SKILL.md "Composing features" worked example literally:
@@ -344,8 +365,8 @@ test('documented auth x crud composition works end to end', async (t) => {
     )
     .replace('POST: async ({ body }) => {', 'POST: requireAuth(async ({ body, user }) => {')
     .replace(
-      'const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body };',
-      'const item = { id: randomUUID(), createdAt: new Date().toISOString(), ...body, author: user.username };',
+      'const item = { ...body, id: randomUUID(), createdAt: new Date().toISOString() };',
+      'const item = { ...body, id: randomUUID(), createdAt: new Date().toISOString(), author: user.username };',
     )
     .replace(/return \[201, item\];\r?\n      \},/, 'return [201, item];\n      }),');
   await writeFile(routePath, route);
@@ -405,7 +426,7 @@ test('add upload keeps the web project green', async (t) => {
   const projectDir = await scaffold(t, { feature: 'upload' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /5 tests passed/); // 3 web + 2 upload
+  assert.match(stdout, /6 tests passed/); // 3 web + 3 upload (roundtrip, inert html/svg, validation)
 });
 
 test('add rate-limit keeps the web project green', async (t) => {
@@ -667,14 +688,89 @@ test('verify header names the mode; boot skip names the real cause; empty dir is
     (err) => /Idea2Prototype verify — FAIL/.test(err.stdout ?? '') && /no Node project found/.test(err.stdout ?? ''),
   );
 
-  // sources but no tests anywhere: tests SKIP with the loud note, boot skip
-  // names the cause, verdict is syntax-only PASS — header still says verify
+  // sources but no tests anywhere: tests SKIP with the loud note; boot still
+  // RUNS (no tests is not a reason to skip it) and skips only for its own
+  // reason — here, no server.mjs. Header still says verify.
   await writeFile(join(dir, 'math.mjs'), "export const add = (a, b) => a + b;\n");
   const res = await i2p(['verify', dir], { cwd: HERE });
   assert.match(res.stdout, /Idea2Prototype verify — PASS \(1\/3 passed\)/);
   assert.match(res.stdout, /tests\s+SKIP\s+no test files found/);
-  assert.match(res.stdout, /if your tests live elsewhere, this verdict is syntax-only/);
-  assert.match(res.stdout, /boot\s+SKIP\s+skipped \(no test files found\)/);
+  assert.match(res.stdout, /if your tests live elsewhere, this verdict covers syntax \+ boot only/);
+  assert.match(res.stdout, /boot\s+SKIP\s+no server\.mjs/);
+});
+
+// Review finding 3: with no tests, boot used to be skipped too — a server
+// whose start() throws verified PASS on syntax alone. Boot now runs.
+test('verify boots a project with no tests: a crashing start() fails, a healthy one passes', async (t) => {
+  const crashing = await mkdtemp(join(tmpdir(), 'i2p-notests1-'));
+  t.after(() => rm(crashing, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(join(crashing, 'server.mjs'), "export async function start() { throw new Error('boom: db unreachable'); }\n");
+  await assert.rejects(
+    i2p(['verify', crashing], { cwd: HERE, timeout: 60_000 }),
+    (err) => /verify — FAIL/.test(err.stdout ?? '') && /boot\s+FAIL\s+boom: db unreachable/.test(err.stdout ?? ''),
+  );
+
+  const healthy = await mkdtemp(join(tmpdir(), 'i2p-notests2-'));
+  t.after(() => rm(healthy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(
+    join(healthy, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => { res.writeHead(200); res.end("hi"); });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  const { stdout } = await i2p(['verify', healthy], { cwd: HERE, timeout: 60_000 });
+  assert.match(stdout, /verify — PASS \(2\/3 passed\)/);
+  assert.match(stdout, /tests\s+SKIP\s+no test files found/);
+  assert.match(stdout, /boot\s+PASS/);
+});
+
+// Review finding 4: a foreign start() returning a bare http.Server (no .port,
+// callback-style close) crashed verify with "app.close(...).catch is not a
+// function" before any verdict printed. A 60s timeout stands in for a hang.
+test('verify judges a foreign start() that returns a bare http.Server', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-bare-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { createServer } from 'node:http';\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => { res.writeHead(200); res.end("ok"); });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve(server)));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'smoke.test.mjs'), "import test from 'node:test';\ntest('ok', () => {});\n");
+  const { stdout } = await i2p(['verify', dir], { cwd: HERE, timeout: 60_000 });
+  assert.match(stdout, /verify — PASS \(3\/3 passed\)/);
+  assert.match(stdout, /boot\s+PASS\s+GET \/api\/health -> 200, GET \/ -> 200/);
+});
+
+// Review finding 5: boot runs in the engine process, so cwd-relative paths
+// resolved against the CALLER's directory — a foreign server reading
+// config.json failed from outside its dir, and a scaffold booted with no
+// routes and no public/ (GET / -> 404) yet still passed. Boot now chdirs.
+test('verify boots the project from its own directory regardless of the caller cwd', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-cwd-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  await writeFile(join(dir, 'config.json'), '{"greeting":"hi"}\n');
+  await writeFile(
+    join(dir, 'server.mjs'),
+    "import { readFileSync } from 'node:fs';\nimport { createServer } from 'node:http';\n" +
+      "const config = JSON.parse(readFileSync('config.json', 'utf8')); // cwd-relative on purpose\n" +
+      'export function start(port = 0) {\n' +
+      '  const server = createServer((req, res) => { res.writeHead(200); res.end(config.greeting); });\n' +
+      '  return new Promise((resolve) => server.listen(port, () => resolve({ port: server.address().port, close: () => new Promise((r) => server.close(() => r())) })));\n' +
+      '}\n',
+  );
+  await writeFile(join(dir, 'smoke.test.mjs'), "import test from 'node:test';\ntest('ok', () => {});\n");
+  const foreign = await i2p(['verify', dir], { cwd: HERE, timeout: 60_000 });
+  assert.match(foreign.stdout, /verify — PASS \(3\/3 passed\)/);
+
+  // scaffold verified from its parent: the static root must really be served
+  const projectDir = await scaffold(t, {});
+  const scaffolded = await i2p(['verify', 'app'], { cwd: join(projectDir, '..') });
+  assert.match(scaffolded.stdout, /boot\s+PASS\s+GET \/api\/health -> 200, GET \/ -> 200/);
 });
 
 // review round: uploaded/generated .test. files must never be EXECUTED by
@@ -1128,6 +1224,6 @@ test('test files run serially — a later test file sees an earlier one\'s store
   );
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  // web template (3) + generated CRUD (2) + seed + observe
-  assert.match(stdout, /7 tests passed/);
+  // web template (3) + generated CRUD (3) + seed + observe
+  assert.match(stdout, /8 tests passed/);
 });

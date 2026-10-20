@@ -227,6 +227,25 @@ const FEATURES = {
   },
 };
 
+// api-crud resource names that would collide with another feature's data
+// store, route file, or URL path — in EITHER add order, so a file-exists
+// check alone can't catch them. "users" is the dangerous one: a CRUD resource
+// over data/users.json serves auth-local's salts + hashes to anonymous GETs
+// and lets anonymous POSTs plant login-capable accounts.
+const RESERVED_RESOURCES = new Map([
+  ['users', 'auth-local stores accounts in data/users.json'],
+  ['auth', 'auth-local owns routes/auth.mjs and /api/auth/*'],
+  ['jobs', 'worker-jobs owns data/jobs.json, routes/jobs.mjs and /api/jobs'],
+  ['uploads', 'upload owns routes/uploads.mjs and /api/uploads'],
+  ['events', 'sse owns /api/events'],
+  ['sse', 'sse owns routes/sse.mjs'],
+  ['ping', 'rate-limit owns /api/ping'],
+  ['ratelimit', 'rate-limit owns routes/ratelimit.mjs'],
+  ['cors', 'cors owns routes/cors.mjs'],
+  ['cors-ping', 'cors owns /api/cors-ping'],
+  ['health', 'the server answers /api/health itself'],
+]);
+
 async function cmdAdd(rest) {
   const feature = rest[0]?.startsWith('--') ? undefined : rest[0];
   const opts = parseFlags(rest.slice(feature ? 1 : 0), ['resource']);
@@ -245,6 +264,9 @@ async function cmdAdd(rest) {
     const resource = opts.resource ?? die('--resource <name> is required (e.g. --resource todos)');
     if (!/^[a-z][a-z0-9-]*$/.test(resource)) {
       die(`invalid resource name "${resource}" — lowercase letters, digits, dashes`);
+    }
+    if (RESERVED_RESOURCES.has(resource)) {
+      die(`resource name "${resource}" is reserved — ${RESERVED_RESOURCES.get(resource)}; pick another name`);
     }
     opts.resource = resource;
   }
@@ -435,14 +457,15 @@ async function discoverTestFiles(projectDir) {
 }
 
 async function stepTests(projectDir, syntaxPassed) {
-  if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)' };
+  if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)', cause: 'syntax' };
   const testFiles = (await discoverTestFiles(projectDir)).map((f) => relative(projectDir, f));
   if (!testFiles.length) {
     return {
       name: 'tests',
       status: 'skip',
       detail: 'no test files found',
-      notes: ['looked for node:test conventions (*.test.{js,mjs,cjs}, test-*.js, *-test.js, *_test.js, test.js, and every .js/.mjs/.cjs under a test/ directory), skipping node_modules, uploads, data, dist, coverage, public — if your tests live elsewhere, this verdict is syntax-only'],
+      cause: 'no-tests',
+      notes: ['looked for node:test conventions (*.test.{js,mjs,cjs}, test-*.js, *-test.js, *_test.js, test.js, and every .js/.mjs/.cjs under a test/ directory), skipping node_modules, uploads, data, dist, coverage, public — if your tests live elsewhere, this verdict covers syntax + boot only'],
     };
   }
 
@@ -521,15 +544,26 @@ async function stepTests(projectDir, syntaxPassed) {
 
 async function stepBoot(projectDir, testsStep, marker) {
   if (testsStep.status === 'fail') return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
-  if (testsStep.status === 'skip') {
-    // Name the actual cause — a syntax failure is why nothing ran, not
-    // "no tests found" ("skipped (…)" details unwrap to their inner cause).
-    const cause = testsStep.detail.replace(/^skipped \((.*)\)$/, '$1');
-    return { name: 'boot', status: 'skip', detail: `skipped (${cause})` };
+  // A syntax failure is why nothing ran — importing broken code proves nothing.
+  if (testsStep.cause === 'syntax') return { name: 'boot', status: 'skip', detail: 'skipped (syntax failed)' };
+  // "No tests found" is NOT a reason to skip boot: a project without tests is
+  // exactly the one whose only remaining evidence is whether it starts (a
+  // server that throws in start() used to verify PASS on syntax alone).
+  //
+  // Boot runs in THIS process, so the project's cwd-relative paths (the
+  // templates' ROOT/routes/data, a foreign readFileSync('config.json')) must
+  // resolve against the project — as they do for the tests step (cwd:
+  // projectDir) and for `npm start`. Otherwise `verify <dir>` from elsewhere
+  // boots a different app than `verify` from inside it.
+  const previousCwd = process.cwd();
+  process.chdir(projectDir);
+  try {
+    // Library projects have no server to probe — boot = import the public API.
+    if (marker?.template === 'library') return await bootLibrary(projectDir);
+    return await bootServer(projectDir, marker);
+  } finally {
+    process.chdir(previousCwd);
   }
-  // Library projects have no server to probe — boot = import the public API.
-  if (marker?.template === 'library') return bootLibrary(projectDir);
-  return bootServer(projectDir, marker);
 }
 
 async function bootLibrary(projectDir) {
@@ -553,67 +587,95 @@ async function bootServer(projectDir, marker) {
   if (!existsSync(serverPath)) return { name: 'boot', status: 'skip', detail: 'no server.mjs' };
 
   const started = Date.now();
-  let app; // closed in finally once started — a leaked listener hangs the process forever
-  // The import ran but no app handle came back to close: the module may hold
+  let app; // closed below once started — a leaked listener hangs the process forever
+  // The import ran but no closable app handle came back: the module may hold
   // its own listeners (foreign entry points often listen at import time).
   // Mark the step so runChecks exits explicitly after printing the verdict —
   // those handles are unreachable from here and would hang the process.
   const leakedImport = { unreachableHandles: true };
+  let result;
   try {
     const mod = await withTimeout(import(pathToFileURL(serverPath).href), 15_000, 'server import');
     if (typeof mod.start !== 'function') {
       return { name: 'boot', status: 'skip', detail: 'server.mjs does not export start()', ...leakedImport };
     }
     app = await withTimeout(mod.start(0), 10_000, 'server start');
-    // redirect: 'manual' — never follow a redirect off the probe target; the
-    // 3xx itself counts as serving (foreign ok-range is 200–399).
-    const probe = async (path) =>
-      withTimeout(fetch(`http://127.0.0.1:${app.port}${path}`, { redirect: 'manual' }), 10_000, `${path} request`);
-    let res = await probe('/api/health');
-    let detail = `GET /api/health -> ${res.status}`;
-    // Foreign projects (verify mode) may not implement our template's health
-    // route — a server that starts and serves its own surface still boots.
-    let rootProbed = false;
-    if (res.status === 404) {
-      res = await probe('/');
-      detail = `GET /api/health -> 404, GET / -> ${res.status}`;
-      rootProbed = true;
-    }
-    const body = await res.json().catch(() => ({}));
-
-    // Scaffolded projects follow the template contract (health returns
-    // {"status":"ok"}); foreign projects only have to start and serve.
-    const ok = marker
-      ? res.status === 200 && body.status === 'ok'
-      : res.status >= 200 && res.status < 400;
-    if (!ok) {
-      return { name: 'boot', status: 'fail', detail: `${detail} ${JSON.stringify(body)}` };
-    }
-
-    // #18: a health route alone can certify an app whose every real route
-    // 500s — also probe the root. 4xx on / is legitimate (API-only projects),
-    // a 5xx root is a real defect. Symmetric for scaffolded and foreign
-    // projects; a request error here surfaces via the outer catch.
-    if (!rootProbed) {
-      const root = await probe('/');
-      detail += `, GET / -> ${root.status}`;
-      if (root.status >= 500) {
-        return { name: 'boot', status: 'fail', detail: `${detail} — root serves an error` };
-      }
-    }
-    return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
+    result = await probeServer(app, marker, started);
   } catch (err) {
-    // Import or start() threw before app was assigned → nothing was closed.
-    // (Probe failures after a successful start still run the finally close.)
-    return {
-      name: 'boot',
-      status: 'fail',
-      detail: String(err?.message ?? err),
-      ...(app ? {} : leakedImport),
-    };
-  } finally {
-    if (typeof app?.close === 'function') await app.close().catch(() => {});
+    result = { name: 'boot', status: 'fail', detail: String(err?.message ?? err) };
   }
+  // Not a finally: a close() that throws or never settles must not replace
+  // the verdict (foreign handles are untrusted) — it only flags the exit.
+  if (!(await closeApp(app))) Object.assign(result, leakedImport);
+  return result;
+}
+
+// start(0) may hand back the template contract ({ port, close() }) or, in
+// foreign projects, a bare listening http.Server — read the port from either.
+function appPort(app) {
+  return app?.port ?? app?.address?.()?.port ?? app?.server?.address?.()?.port;
+}
+
+// Close whatever start() returned: a promise-returning close() (template
+// contract) or a callback-style http.Server close(cb). Returns false when
+// nothing closable came back or the close failed/hung — the caller then
+// exits explicitly instead of hanging on handles it cannot reach.
+async function closeApp(app) {
+  if (typeof app?.close !== 'function') return false;
+  try {
+    app.closeAllConnections?.(); // bare http.Server: drop keep-alive sockets so close(cb) settles
+    await withTimeout(new Promise((resolve, reject) => {
+      const ret = app.close((err) => (err ? reject(err) : resolve()));
+      if (typeof ret?.then === 'function') ret.then(resolve, reject);
+    }), 5_000, 'server close');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function probeServer(app, marker, started) {
+  const port = appPort(app);
+  if (!Number.isInteger(port)) {
+    return { name: 'boot', status: 'fail', detail: 'start() returned no port — expected { port, close() } or a listening http.Server' };
+  }
+  // redirect: 'manual' — never follow a redirect off the probe target; the
+  // 3xx itself counts as serving (foreign ok-range is 200–399).
+  const probe = async (path) =>
+    withTimeout(fetch(`http://127.0.0.1:${port}${path}`, { redirect: 'manual' }), 10_000, `${path} request`);
+  let res = await probe('/api/health');
+  let detail = `GET /api/health -> ${res.status}`;
+  // Foreign projects (verify mode) may not implement our template's health
+  // route — a server that starts and serves its own surface still boots.
+  let rootProbed = false;
+  if (res.status === 404) {
+    res = await probe('/');
+    detail = `GET /api/health -> 404, GET / -> ${res.status}`;
+    rootProbed = true;
+  }
+  const body = await res.json().catch(() => ({}));
+
+  // Scaffolded projects follow the template contract (health returns
+  // {"status":"ok"}); foreign projects only have to start and serve.
+  const ok = marker
+    ? res.status === 200 && body.status === 'ok'
+    : res.status >= 200 && res.status < 400;
+  if (!ok) {
+    return { name: 'boot', status: 'fail', detail: `${detail} ${JSON.stringify(body)}` };
+  }
+
+  // #18: a health route alone can certify an app whose every real route
+  // 500s — also probe the root. 4xx on / is legitimate (API-only projects),
+  // a 5xx root is a real defect. Symmetric for scaffolded and foreign
+  // projects; a request error here surfaces via bootServer's catch.
+  if (!rootProbed) {
+    const root = await probe('/');
+    detail += `, GET / -> ${root.status}`;
+    if (root.status >= 500) {
+      return { name: 'boot', status: 'fail', detail: `${detail} — root serves an error` };
+    }
+  }
+  return { name: 'boot', status: 'pass', detail: `${detail} in ${Date.now() - started}ms` };
 }
 
 // ---------------------------------------------------------------------------
