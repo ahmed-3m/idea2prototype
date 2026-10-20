@@ -15,7 +15,7 @@ Idea2Prototype check — PASS (3/3)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
 ```
 
-**Status:** v0.9.1 · actively maintained · 0.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
+**Status:** v1.0.0 · actively maintained · 1.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
 That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails).
 
@@ -113,7 +113,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 
 ## Benchmarks
 
-`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included. Three specs are archived: specs 1–2 (web app, API) favor the harness (23% fewer hand-written LOC, 2× tests, zero runner-compat failures — the control's from-scratch `npm test` broke on Node 24/Windows); spec 3 (micro-CLI) is an honest loss on speed and LOC — fixed overhead dominates tiny builds — with reliability and function at parity.
+`benchmarks/specs.md` is a pre-registered protocol: paired 2-arm design (same agent with vs. without the harness), blind functional judges, a symmetric verifier (`i2p verify`), and hypotheses stated up front. Results land in that file as they're measured — failures included. Ten specs are archived. Specs 1–2 (web app, API) favor the harness (23% fewer hand-written LOC, 2× tests, zero runner-compat failures — the control's from-scratch `npm test` broke on Node 24/Windows); spec 3 (micro-CLI) is an honest loss on speed and LOC — fixed overhead dominates tiny builds — with reliability and function at parity; spec 4 (expense tracker) wrote ~43% fewer hand-written LOC with 3× tests; spec 7 (bookmarks API + tag filter) is the strongest result at ~64%. Across the set the pattern holds: hand-written LOC −10%…−64% on 7 of 8 build-type specs (spec 6 at parity), generated tests 2–3× the control's, full-depth verify against the control's recurring boot-skip — while the from-scratch arm stays faster on several small builds, recorded as such.
 
 ## Design rules
 
