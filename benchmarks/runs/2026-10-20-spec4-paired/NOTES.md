@@ -19,6 +19,7 @@ Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in
 ## Findings (fed back to the tool)
 
 1. **`verify` never exits on foreign projects whose server.mjs listens at import time and exports nothing.** The boot probe imports the module, records the honest skip, but the imported listener (port 3000) keeps the verifier process alive forever — the verdict prints, the process hangs (reproduced: stray PID on :3000; verdict captured via file redirect). An engine fix is queued for this loop.
+2. **`check` runs test files concurrently, and data-file-backed features race across processes.** Each test file is its own process with its own in-memory cache over the same `data/*.json`; concurrent read-modify-write cycles lose updates. Reproduced on the treatment arm: `node --test <3 files>` left the generated CRUD roundtrip item in the store in 2 of 3 runs; `--test-concurrency=1` left 0 in 3 runs. Verdicts stay PASS (generated tests are self-relative) but stores leak rows per run and absolute-count assertions break nondeterministically. Engine fix queued (serialize test files inside `check`).
 
 ## Deviations from protocol (documented honestly)
 
@@ -27,6 +28,8 @@ Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in
 3. **Functional judge knew the arms** — mitigations: rubric pre-registered with timestamp before builds, criteria executed mechanically, verifier arm-blind.
 4. **Judge script needed one mechanical hardening re-run** — first invocation passed URL paths as `/api/...` CLI args, which Git Bash's MSYS layer rewrote to Windows paths (`C:/Program Files/Git/api/...`). The judge now takes route paths without the leading slash (normalizing either form). Rubric criteria unchanged; both arms re-judged from scratch after the fix (5/5 both).
 5. **Machine not perfectly idle**; wall-clock from unix timestamps, rounded honestly (~89s = 09:39:01→09:40:30, ~76s = 09:40:46→09:42:02 UTC).
+6. **The judge script was hardened AFTER the runs, then both arms re-judged from fresh stores** (external review of the results PR found: a dead app could miscount the rubric 1/4 instead of x/5; the c4 `some()` check wasn't re-run-safe against seed data; POSIX cleanup leaked the shell's child; readiness errors were swallowed). The re-judge exposed that judging a persistent arm twice poisons absolute-total fixtures (the judge's own POSTs accumulate) — stores were reset to their build-time state (empty) first. Final verdicts, post-hardening, fresh stores: treatment 5/5, control 5/5 (same as the first-pass verdicts). Rubric criteria themselves unchanged.
+7. **One intermediate hardening bug was caught and fixed before recording**: normalizing absent before-categories to `NaN` made c3 fail on a fresh store (`NaN === NaN + 15` is false); absent/non-finite now read as 0, which also keeps an `Infinity` summary value from comparing equal to itself + 15.
 
 ## Reproduce
 
