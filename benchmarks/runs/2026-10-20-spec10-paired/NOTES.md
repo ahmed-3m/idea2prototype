@@ -1,0 +1,31 @@
+# Spec 10 — paired run (Word counter CLI), 2026-10-20
+
+Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in `D:/tmp/i2p-spec10/RUBRIC.md`, 2026-10-20T16:12:54Z; copy in this directory): `c1 CLI runs per its documented command (valid file exits 0; no-file gives guidance, not a stack trace) · c2 word count correct · c3 line count correct · c4 top-5 words listed, descending frequency, tie-fair · c5 own tests pass via their documented command`. A CLI's flows are stdout/exit codes — fully mechanical. **Expectations are computed programmatically by the judge** (whitespace-split on its own fixed input) — the pre-registration records that the draft's illustrative count was wrong (`the`×5; the true count is `the`×4, caught before either arm ran or the judge was written; the operative rule was always programmatic). Same builder, same model (GLM-5.3), same machine; arms run sequentially — **treatment first** (alternation chain: 5 T, 6 C, 8 T, 9 C, 10 T). Criteria executed mechanically by `benchmarks/judge-spec10.mjs` (judge-spec3 CLI conventions + the round-2 family hardening).
+
+## Results
+
+| Arm | Wall-clock (build) | Hand-written (full set) | Tests | Verifier | Judge |
+|---|---|---|---|---|---|
+| Treatment | ~2m27s (16:13:37→16:16:04Z), 2 fix cycles (both test-expectation bugs; CLI logic correct throughout) | 3 files / 134 LOC (scaffold gifted package.json, README, help/version scaffolding) | 3 | PASS (2/3, boot skip) | 5/5 |
+| Control | ~1m10s (16:16:15→16:17:25Z), 1 fix cycle (empty-file line count — caught by its own test) | 4 files / 136 LOC (everything) | 3 | PASS (2/3, boot skip) | 5/5 |
+
+- **The spec-3 micro-CLI pattern replicates: parity everywhere it can be parity.** LOC 134 vs 136 (−1%), tests 3 vs 3, verifier both PASS 2/3 (boot skip "no server.mjs" — the honest serverless verdict, first time both arms land in the same verify class), judge 5/5 = 5/5 with fully mechanical CLI expectations. Spec 3's prediction — fixed overhead dominates on micro-CLIs — holds on a second CLI data point (n=2 CLIs of n=10 specs).
+- **Wall-clock: control faster again (~1m10s vs ~2m27s).** Both arms' fix cycles were TEST bugs, not logic bugs (treatment: two wrong expectations in its own tests — a miscounted `the` and a tie-order assertion that contradicted its own alphabetical tie-break; control: empty-file lines). The treatment's double cycle is the same class the spec-3 treatment hit (fixed overhead of adapting scaffold tests to a tightened contract).
+- Hypotheses: H1 (tokens) **not measurable** — deviation 2. H2 (wall-clock ↓) **failed**. H3 (reliability) parity — both harnesses green after one-or-two small cycles. H4 (function) **parity** — 5/5 = 5/5.
+- Arm shapes: treatment = scaffold `cli` template (help/version/unknown-command handling gifted) + hand-written `count` command with Map-based frequency table and alphabetical tie-break; control = single `wordcount.mjs` with an exported `analyze()` core + `import.meta.url` main-guard + bin entry.
+
+## Deviations from protocol (documented honestly)
+
+1. **Builder was the orchestrator session, not fresh subagent sessions** — Agent tool broken 4+ consecutive days; in-session sequential builds preserve the within-subject pairing but weaken the fresh-session control.
+2. **Token usage not recorded** — RQ1 untested.
+3. **Functional judge knew the arms** — mitigations: rubric pre-registered with timestamp before builds, criteria executed mechanically (programmatic expectations, label-tolerant parsing, unique temp dirs), verifier arm-blind.
+4. **Machine not perfectly idle**; wall-clock from unix timestamps (16:13:37→16:16:04, 16:16:15→16:17:25 UTC).
+5. **Rubric draft-history note:** the pre-registered rubric's illustrative frequency table contained a human miscount (`the`×5 vs the true ×4). Corrected BEFORE either arm completed and before the judge was written; the operative rule (programmatic computation) was unchanged and is what the judge implements. Recorded here because pre-registration honesty includes its own errata.
+6. Both arms probed live before judging (count on the shared sample file, help output, bad-path exit codes); judge verified c1's no-file guidance on both arms' documented invocations.
+
+## Reproduce
+
+- Spec text (verbatim, both arms): "Build a working prototype: Word counter CLI: `count <file>` → words, lines, top-5 words. Requirements: runnable with Node.js, include automated tests, finish only when it works end to end. When finished reply with DONE and instructions to run it."
+- Treatment = spec text + idea2prototype skill flow (engine v0.9.1 @ `1191761`-era main, scaffolded at v0.9.1: `new --template cli`, filled PROTOTYPE.md, hand-written `count` command in `cli.mjs` + rewritten subprocess tests, `npm run check` ×2 PASS (2/3, boot skip — serverless honest). Control = spec text only, full freedom: single-module CLI with exported analyze core; `npm test` 3/3 after 1 fix cycle.
+- Judge: `node benchmarks/judge-spec10.mjs <dir> "<countCmdTemplate with FILE>" "<testCmd>"` (treatment `node cli.mjs count FILE` + `npm run check`; control `node wordcount.mjs count FILE` + `npm test`) + `node skills/idea2prototype/scripts/idea2prototype.mjs verify <dir> --json`.
+- Arms kept for inspection: `D:/tmp/i2p-spec10/{control,treatment}` (not committed — repo bloat).
