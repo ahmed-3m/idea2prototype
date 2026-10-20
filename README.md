@@ -47,6 +47,7 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 | `i2p add rate-limit` | per-key fixed-window limiter: 429 + `Retry-After` + `X-RateLimit-*` headers |
 | `i2p add cors` | CORS wrapper: preflight answers + `access-control-*` headers, origin allowlists |
 | `i2p add sse` | Server-Sent Events stream: `GET /api/events`, `text/event-stream` + heartbeats |
+| `i2p add worker-jobs` | persistent background job queue: `enqueue`/`list`/`registerHandler`, `data/jobs.json`, 3 attempts |
 | `i2p check [--json]` | syntax + tests + boot, compact verdict (also `npm run check`) |
 | `i2p verify [dir] [--json]` | same verdict on ANY Node project — judge mode |
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |
@@ -120,7 +121,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 
 One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-driven check is on the roadmap.
 
-Another boundary worth naming: templates are single-purpose. A task needing a web app **and** background jobs scaffolds as `web` and hand-builds the job-queue part (or vice versa) — features compose within a template (auth × CRUD, rate-limit, cors, sse), but templates do not compose with each other. A future `add worker`-style feature could close this; today the boundary is deliberate and documented.
+Another boundary worth naming: templates are single-purpose and do not compose with each other — features compose within a template (auth × CRUD, rate-limit, cors, sse, worker-jobs). The one gap this used to leave — a web/api app that also needs background jobs — is closed by `add worker-jobs`, which brings the worker template's persistent queue in as a feature module; anything bigger than that still scaffolds as the primary template with the smaller part hand-built.
 
 ## Contributing
 
