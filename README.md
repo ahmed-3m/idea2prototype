@@ -76,7 +76,7 @@ node ../idea2prototype/skills/idea2prototype/scripts/idea2prototype.mjs add api-
 npm run check                   # still PASS — now with CRUD tests
 ```
 
-Every release publishes `@ahmed-3m/idea2prototype` to npmjs.org — the primary channel — and mirrors it on the GitHub Packages registry under the same name; that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as the mirror.
+Every release publishes `@ahmed-3m/idea2prototype` to npmjs.org — the primary channel — and mirrors it on the GitHub Packages registry under the same name; that registry asks consumers for a token in `.npmrc` even for public packages, so treat it as the mirror. (`npm i -g @ahmed-3m/idea2prototype` gets you the short `i2p` command the table above uses.)
 
 **ZCode plugin:** add this repo's marketplace, install `idea2prototype`, then pick the skill in the composer or use `/proto-new a recipe box with search`.
 
@@ -121,7 +121,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 4. **No destructive operations.** `new` refuses non-empty directories.
 5. **Portable core.** One `.mjs` engine; plugin/skill/npm wrappers are sugar.
 
-One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it, so older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An `npx`-driven check is on the roadmap.
+One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it — for a project scaffolded via npx, that's the copy in the local npx cache, so a cleared cache or a second machine means re-running the npx command (or the clone fallback) — and older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). A registry-resolved check — always the current engine, no dependence on the scaffold-time copy — is on the roadmap.
 
 Another boundary worth naming: templates are single-purpose and do not compose with each other — features compose within a template (auth × CRUD, rate-limit, cors, sse, worker-jobs). The one gap this used to leave — a web/api app that also needs background jobs — is closed by `add worker-jobs`, which brings the worker template's persistent queue in as a feature module; anything bigger than that still scaffolds as the primary template with the smaller part hand-built.
 

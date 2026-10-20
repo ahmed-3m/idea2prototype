@@ -22,5 +22,5 @@ You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool
 1. Scaffold with `new`, then fill `PROTOTYPE.md` (Goal ≤ 3 bullets, 1–3 core flows, out-of-scope).
 2. Never hand-write files the tool owns (`server.mjs`, scaffold `tests/`, `package.json`). Add capabilities with `add`, not from scratch.
 3. After every meaningful change: `npm run check`. Read the verdict only — never run tests directly, never read raw logs.
-4. Need context? `i2p map` first; open only the files you're changing.
+4. Need context? `npx @ahmed-3m/idea2prototype map` first; open only the files you're changing.
 5. Done = check PASS + spec flows work. Report the verdict lines.
