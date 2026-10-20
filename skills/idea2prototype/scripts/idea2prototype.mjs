@@ -64,11 +64,23 @@ async function cmdNew(rest) {
   // Windows reserved device names (CON, NUL, COM1-9, ...) create directories
   // PowerShell cannot even enter. Reject on every platform so a scaffold
   // stays portable, not just usable where it was created.
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(slug)) {
+  const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+  if (RESERVED.test(slug)) {
     die(`"${slug}" is a reserved Windows device name — pick a different directory name`);
   }
   if (slug.length > 200) {
     die(`directory name too long (${slug.length} chars, max 200) — nested scaffold files can exceed Windows MAX_PATH`);
+  }
+  // Same portability bar for every component `new` may CREATE: without this,
+  // `new con/proj` scaffolds inside a reserved-name dir via the back door.
+  for (const part of dir.split(/[\\/]+/).filter(Boolean).slice(0, -1)) {
+    const component = part.toLowerCase();
+    if (RESERVED.test(component)) {
+      die(`"${part}" is a reserved Windows device name — pick a different directory name`);
+    }
+    if (component.length > 200) {
+      die(`directory name too long (${component.length} chars, max 200) — nested scaffold files can exceed Windows MAX_PATH`);
+    }
   }
   const name = (opts.name ?? basename(resolve(dir))).replace(/[<>]/g, '');
   const idea = opts.idea ?? '(describe the idea in one sentence)';
@@ -707,7 +719,7 @@ function parseFlags(args, valueFlags, booleanFlags = []) {
       const key = arg.slice(2);
       if (valueFlags.includes(key)) {
         const val = args[++i];
-        if (val === undefined || val === '' || val.startsWith('--')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
+        if (val === undefined || val === '' || val.startsWith('-')) die(`flag "${arg}" needs a value (allowed: ${allowed})`);
         out[key] = val;
       } else if (booleanFlags.includes(key)) {
         out[key] = true;

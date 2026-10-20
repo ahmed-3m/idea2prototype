@@ -644,7 +644,7 @@ test('new refuses to overwrite a non-empty directory', async (t) => {
 test('new rejects reserved Windows device names and over-long names before writing', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'i2p-names-'));
   t.after(() => rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
-  for (const bad of ['CON', 'nul', 'Aux', 'com1', 'lpt9']) {
+  for (const bad of ['CON', 'nul', 'Aux', 'com1', 'lpt9', 'con/proj', 'sub/nul/x']) {
     await assert.rejects(
       i2p(['new', bad], { cwd: base }),
       (err) => /reserved Windows device name/i.test(err.stderr ?? ''),
@@ -703,6 +703,11 @@ test('unknown flags die with the allowed list instead of being ignored', async (
   );
   await assert.rejects(
     i2p(['new', 'x', '--idea', '--name'], { cwd: dir }),
+    (err) => /needs a value/.test(err.stderr ?? ''),
+  );
+  // single-dash operands are typos of flags this CLI does not have
+  await assert.rejects(
+    i2p(['new', 'x', '--idea', '-nope'], { cwd: dir }),
     (err) => /needs a value/.test(err.stderr ?? ''),
   );
 });
