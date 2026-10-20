@@ -1,9 +1,11 @@
 # Publishes the package to two npm registries whenever a release is published:
 #  - GitHub Packages (npm.pkg.github.com) — GITHUB_TOKEN auth, always runs
-#  - npmjs.org — NPM_TOKEN secret; skips with a visible warning until the
-#    secret is configured, then publishes on the next release (or re-run via
-#    workflow_dispatch). Both channels carry the scoped name
-#    @ahmed-3m/idea2prototype (GitHub Packages hosts scoped names only).
+#  - npmjs.org — NPM_TOKEN secret; npmjs is the documented PRIMARY channel, so
+#    a release without the secret fails loudly (a mirror-only release would
+#    silently invert the README's install claims). Manual workflow_dispatch
+#    without the secret still skips with a visible warning — it is a deliberate
+#    operator re-publish action, not a release. Both channels carry the scoped
+#    name @ahmed-3m/idea2prototype (GitHub Packages hosts scoped names only).
 name: publish
 
 on:
@@ -64,12 +66,16 @@ jobs:
             exit 1
           fi
 
-      - name: Publish to npmjs.org (visible skip until NPM_TOKEN is configured)
+      - name: Publish to npmjs.org
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish"
+            if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+              echo "::error::NPM_TOKEN not configured - npmjs is the documented primary channel, refusing to publish this release mirror-only"
+              exit 1
+            fi
+            echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish (manual dispatch)"
             exit 0
           fi
           npm pkg set name="@ahmed-3m/idea2prototype"
