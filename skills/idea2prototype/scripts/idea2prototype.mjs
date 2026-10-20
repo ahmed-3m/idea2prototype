@@ -259,12 +259,12 @@ async function runChecks(projectDir, asJson, mode = 'check') {
   steps.push(syntax);
   const tests = await stepTests(projectDir, syntax.status === 'pass');
   steps.push(tests);
-  const boot = await stepBoot(projectDir, tests.status, marker);
+  const boot = await stepBoot(projectDir, tests, marker);
   steps.push(boot);
 
   // An empty directory is not a project: judge mode must not hand out a
   // green verdict for a dir with nothing to check (no sources, no tests).
-  if (!marker && tests.status === 'skip' && /^0 files parse clean$/.test(steps[0].detail)) {
+  if (!marker && tests.status === 'skip' && steps[0].files === 0) {
     steps.push({ name: 'project', status: 'fail', detail: 'no Node project found (no sources parsed, no test files)' });
   }
 
@@ -335,8 +335,8 @@ async function stepSyntax(projectDir) {
     detail = `${serverFiles.length} files parse clean`;
   }
   return failures.length
-    ? { name: 'syntax', status: 'fail', detail, notes: failures.slice(0, 3) }
-    : { name: 'syntax', status: 'pass', detail };
+    ? { name: 'syntax', status: 'fail', detail, notes: failures.slice(0, 3), files: total }
+    : { name: 'syntax', status: 'pass', detail, files: total };
 }
 
 // Browser JS can't take the plain `node --check <file>` path: an .js file
@@ -355,12 +355,18 @@ function parsesClean(source, inputType) {
   return res.status === 0;
 }
 
-// Node-convention test discovery for judge mode: `**/*.test.{js,mjs,cjs}`
-// anywhere (node_modules and dot-dirs excluded; public/ holds browser code,
-// data/ holds stores) plus EVERY .js/.mjs/.cjs under a top-level `test/`
-// directory — mirroring `node --test`'s own default discovery closely enough
-// that projects this tool never scaffolded are judged by their real tests
-// instead of silently passing with none found.
+// Test discovery for judge mode, mirroring `node --test`'s own default
+// conventions: **/*.test.{js,mjs,cjs}, test.js, test-*.*, *-test.*/_*_test.*
+// basenames at any depth, plus EVERY .js/.mjs/.cjs under a `test/` directory
+// (any depth) — so projects this tool never scaffolded are judged by their
+// real tests instead of silently passing with none found.
+// Untrusted (uploads/) and generated (dist/, coverage/, data/, public/)
+// trees are never entered: the syntax step already refuses to READ uploads,
+// and discovery must not hand an uploaded *.test.js to `node --test` to
+// EXECUTE. Dot-dirs and node_modules are skipped the same way.
+const TEST_DIR_SKIP = new Set(['node_modules', 'public', 'data', 'uploads', 'dist', 'coverage']);
+const TEST_BASENAME = /^(test(?:-.+)?|.+[._-]test)\.(js|mjs|cjs)$/;
+
 async function discoverTestFiles(projectDir) {
   const found = new Set();
   const JS = /\.(js|mjs|cjs)$/;
@@ -373,12 +379,11 @@ async function discoverTestFiles(projectDir) {
       return;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (entry.name.startsWith('.') || TEST_DIR_SKIP.has(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
-        const isTopTestDir = depth === 0 && entry.name === 'test';
-        await walk(full, depth + 1, underTestDir || isTopTestDir);
-      } else if (JS.test(entry.name) && (underTestDir || (/\.test\.(js|mjs|cjs)$/.test(entry.name) && !relative(projectDir, full).split(sep).includes('public')))) {
+        await walk(full, depth + 1, underTestDir || entry.name === 'test');
+      } else if (underTestDir ? JS.test(entry.name) : TEST_BASENAME.test(entry.name)) {
         found.add(full);
       }
     }
@@ -395,7 +400,7 @@ async function stepTests(projectDir, syntaxPassed) {
       name: 'tests',
       status: 'skip',
       detail: 'no test files found',
-      notes: ['looked for **/*.test.{js,mjs,cjs} outside node_modules, and .js/.mjs/.cjs under test/ — if your tests live elsewhere, this verdict is syntax-only'],
+      notes: ['looked for node:test conventions (*.test.{js,mjs,cjs}, test-*.js, *-test.js, *_test.js, test.js, and every .js/.mjs/.cjs under a test/ directory), skipping node_modules, uploads, data, dist, coverage, public — if your tests live elsewhere, this verdict is syntax-only'],
     };
   }
 
@@ -455,9 +460,14 @@ async function stepTests(projectDir, syntaxPassed) {
   };
 }
 
-async function stepBoot(projectDir, testsStatus, marker) {
-  if (testsStatus === 'fail') return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
-  if (testsStatus === 'skip') return { name: 'boot', status: 'skip', detail: 'skipped (no tests found)' };
+async function stepBoot(projectDir, testsStep, marker) {
+  if (testsStep.status === 'fail') return { name: 'boot', status: 'skip', detail: 'skipped (tests failed)' };
+  if (testsStep.status === 'skip') {
+    // Name the actual cause — a syntax failure is why nothing ran, not
+    // "no tests found" ("skipped (…)" details unwrap to their inner cause).
+    const cause = testsStep.detail.replace(/^skipped \((.*)\)$/, '$1');
+    return { name: 'boot', status: 'skip', detail: `skipped (${cause})` };
+  }
   // Library projects have no server to probe — boot = import the public API.
   if (marker?.template === 'library') return bootLibrary(projectDir);
   return bootServer(projectDir, marker);
