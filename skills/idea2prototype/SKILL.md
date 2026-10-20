@@ -24,9 +24,9 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 - `add rate-limit` — per-key fixed-window limiter: `rateLimit({ max, windowMs, keyFn })` wraps any handler, 429 + Retry-After + X-RateLimit-* headers, `GET /api/ping` demo (web/api)
 - `add cors` — Cross-Origin Resource Sharing: `cors({ origin, methods, credentials })` wraps any handler, answers OPTIONS preflights, stamps access-control-* headers, `GET /api/cors-ping` demo (web/api)
 - `add sse` — Server-Sent Events: `GET /api/events` stream (`text/event-stream`) — write chunks to `ctx.res` directly and return nothing; the server keeps the stream open and cleans up heartbeats on disconnect (web/api)
-- `check` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects. Syntax covers server files (`node --check`) and `public/*.js` (dual ESM/classic parse — broken-in-both fails)
-- `verify [dir]` — same verdict on ANY Node project (judge mode)
-- `map [dir]` — compact repo map (paths + LOC + exports); run it before opening files
+- `check [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects. Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
+- `verify [dir] [--json]` — same verdict on ANY Node project (judge mode)
+- `map [dir] [--json]` — compact repo map (paths + LOC + exports); run it before opening files
 - `list` — show available templates/features
 
 ## Workflow (follow in order)
@@ -91,4 +91,4 @@ Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite
 - `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
 - If the user asks for dependencies (a framework, a database), ask once, then add via `npm install` and extend the tests accordingly.
 - Projects are plain Node — `npm start` (web/api), `node cli.mjs help` (cli), `import ... from './index.mjs'` (library); no other tooling assumed.
-- Templates are single-purpose: no cross-template composition exists (a `web` scaffold cannot absorb the `worker` job queue, and vice versa). If a task needs both shapes, scaffold the primary one and hand-build the smaller part (e.g. a `worker/` module inside a web project) — `check` still covers it as server code. Feature composition (`auth-local` × `api-crud`, `rate-limit`, `cors` wrapping handlers) is supported; template composition is not.
+- Templates are single-purpose: no cross-template composition exists (a `web` scaffold cannot absorb the `worker` job queue, and vice versa). If a task needs both shapes, scaffold the primary one and hand-build the smaller part (e.g. a `worker/` module inside a web project) — `check` still covers it as server code. Feature composition (`auth-local` × `api-crud`, `rate-limit`, `cors`, `sse` streaming) is supported; template composition is not.
