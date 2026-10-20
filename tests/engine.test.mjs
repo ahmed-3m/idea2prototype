@@ -240,25 +240,23 @@ test('handler returning nothing yields a clean 500 (stream contract)', async (t)
   await mkdir(join(projectDir, 'routes'), { recursive: true });
   await writeFile(
     join(projectDir, 'routes', 'broken.mjs'),
-    [
-      'export default [',
-      '  { path: "/api/broken", methods: { GET: async () => {} } },',
-      '  {',
-      '    path: "/api/throw-after-headers",',
-      '    methods: {',
-      '      // streaming shape: headers sent, then the handler blows up — the',
-      '      // outer catch must kill the socket, NOT call sendJson (which would',
-      '      // throw ERR_HTTP_HEADERS_SENT inside the catch and crash the server)',
-      '      GET: async ({ res }) => {',
-      '        res.writeHead(200, { "content-type": "text/event-stream" });',
-      '        res.write("event: boom\\n\\n");',
-      '        throw new Error("mid-stream failure");',
-      '      },',
-      '    },',
-      '  },',
-      '];',
-      '',
-    ].join('\n'),
+    `export default [
+  { path: "/api/broken", methods: { GET: async () => {} } },
+  {
+    path: "/api/throw-after-headers",
+    methods: {
+      // streaming shape: headers sent, then the handler blows up — the
+      // outer catch must kill the socket, NOT call sendJson (which would
+      // throw ERR_HTTP_HEADERS_SENT inside the catch and crash the server)
+      GET: async ({ res }) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("event: boom\\n\\n");
+        throw new Error("mid-stream failure");
+      },
+    },
+  },
+];
+`,
   );
   await writeFile(
     join(projectDir, 'tests', 'broken.test.mjs'),
@@ -293,6 +291,7 @@ test('handler throwing AFTER headers: connection breaks, server survives', async
   );
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /5 tests passed/); // 3 web + both embedded contract tests
 });
 
 // #20: the rate-limit/cors add summaries must tell the agent the demo route
