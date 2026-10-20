@@ -1,0 +1,13 @@
+# Spec 8 rubric — Echo chat web app (pre-registered 2026-10-20T15:08:07Z, BEFORE either arm ran)
+
+Spec text (verbatim, both arms): "Build a working prototype: Echo chat web app: UI sends message, server echoes with timestamp, history in memory. Requirements: runnable with Node.js, include automated tests, finish only when it works end to end. When finished reply with DONE and instructions to run it."
+
+Five binary criteria. Unlike specs 5/6 (UI-internal), an echo chat's core flows are an HTTP protocol (UI → POST → server echo; history retrievable), so criteria c2–c4 are BEHAVIORAL over HTTP, exercised through the endpoints each arm's own README documents (paths passed to the judge per arm — the judge-spec4/7 precedent for layout-agnostic API probing). Message field-name tolerance: the judge sends `{ "text": "…" }` and accepts a response that contains the exact sent string anywhere in its JSON body; the "UI sends message" flow is covered by the same POST (the UI is a client of this endpoint; a zero-dep judge cannot drive a browser).
+
+- **c1 — app starts using its documented command**: `GET /` answers 200 with an HTML document (content-type `text/html`) within 15s of the documented start command, PORT overridden.
+- **c2 — server echoes with a timestamp**: POST a unique judge message (`{ "text": "<stamp>" }`) to the documented send endpoint → HTTP 200/201, body contains the exact message string, AND a timestamp value (ISO-8601 date string or an epoch number > 1e9) distinct from the message itself.
+- **c3 — history retrievable and contains the judge's message**: GET the documented history endpoint → HTTP 200 with a list-shaped body (bare array or common envelope: messages/data/items/history) that contains the exact judge message string.
+- **c4 — history is in memory (cleared by a restart)**: restart the app via its documented command; GET the history endpoint again → HTTP 200 and the judge's message is ABSENT (an empty list, or a list without the stamp). A store that survives restart fails this criterion — the spec's own words say "history in memory".
+- **c5 — own test command passes**: the project's own documented test command exits 0 (runs FIRST, before any judge traffic, `NODE_TEST_CONTEXT` stripped, 120s cap).
+
+Judge: `benchmarks/judge-spec8.mjs <projectDir> <port> "<startCmd>" <sendPath> <historyPath> "<testCmd>"` — route paths WITHOUT the leading slash (MSYS rewrites them; the judge normalizes). Family conventions: c5-first, recorded-flags integrity (exactly five entries), readiness short-circuit, per-arm restart cycle for c4 with full tree cleanup between cycles (Windows `taskkill /T`, POSIX detached group ESRCH-guarded), every fetch capped, unique per-run message stamps (re-run safe), 5s fetch caps, 120s c5 cap.

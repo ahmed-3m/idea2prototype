@@ -1,0 +1,34 @@
+# Spec 8 — paired run (Echo chat web app), 2026-10-20
+
+Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in `D:/tmp/i2p-spec8/RUBRIC.md`, 2026-10-20T15:08:07Z; copy in this directory): `c1 app starts per its own documented command (HTML at /) · c2 server echoes the message with a timestamp · c3 history contains the judge message · c4 history is in memory (cleared by a restart) · c5 own tests pass via their documented command`. Unlike specs 5/6 (UI-internal, source-level judging), an echo chat's core flows ARE an HTTP protocol, so c2–c4 are BEHAVIORAL over HTTP through each arm's documented endpoints (paths passed per arm — the judge-spec4/7 precedent). Same builder, same model (GLM-5.3), same machine; arms run sequentially — treatment first (order alternated from spec 6, which ran control first). Criteria executed mechanically by `benchmarks/judge-spec8.mjs` (round-2 hardened family from the start).
+
+## Results
+
+| Arm | Wall-clock (build) | Hand-written (full set) | Tests | Verifier | Judge |
+|---|---|---|---|---|---|
+| Treatment | ~1m50s (15:08:31→15:10:21Z) | 5 files / 147 LOC (scaffold gifted server.mjs, package.json, README, styles, contract tests) | 6 (3 gifted + 3 hand-written) | PASS 3/3 | 5/5 |
+| Control | not comparable this run — see deviation 5 (active build ≈ 7–8 min incl. 1 real fix cycle; elapsed ~39 min polluted by a ~32-min unattended hung command while the orchestrator worked PR #48's gate in parallel) | 5 files / 192 LOC (everything) | 2 | PASS (2/3, boot skip) | 5/5 |
+
+- **Behavioral judging, clean parity: 5/5 = 5/5.** Both arms echo a unique judge message with a server timestamp, serve history containing it, and clear it on a real process restart (the spec's "history in memory" verified behaviorally, not by source inspection).
+- **LOC: treatment 147 vs control 192 full-set (−23%)** — counted with the corrected convention (all hand-written files both arms, including each arm's index.html and the treatment's filled PROTOTYPE.md; adopted after the spec-6 review caught the old asymmetry).
+- **Tests: 6 vs 2 (3×).** Treatment = 3 scaffold contract tests + 3 hand-written echo tests (echo+ISO timestamp, history+timestamp shape, 400 on blank text; the in-process start() cannot test restart-clearing because the route module is cached — noted in the test, covered by the live probe and judge c4). Control = 2 hand-written tests (echo+timestamp; history+page+404) — its first suite version DEADLOCKED (fix cycle: both tests imported the listen-at-import server; test 1 closed it, test 2's cached re-import awaited a `listening` event that never fires) — fixed by sharing one instance with a `test.after` teardown.
+- **Verifier depth: treatment PASS 3/3 vs control PASS 2/3 (boot skip — listens at import, exports `{ server }`; the recurring control class, 5th consecutive control arm).**
+- Hypotheses: H1 (tokens) **not measurable** — deviation 2. H2 (wall-clock) **not assessable this run** — deviation 5. H3 (reliability) treatment's scaffold harness green first try again; control hit a novel deadlock class its harness had to fix. H4 (function) **parity** — 5/5 = 5/5, judged behaviorally for the first time since spec 7.
+- Arm shapes: treatment = in-memory array in `routes/echo.mjs` (POST echoes + records, GET serves `{messages}`); control = same protocol shape hand-rolled in `server.mjs` at `/api/chat`. Nearly identical designs — the spec pins the architecture, so the harness's advantage here is the gifted server shell + contract tests, not architectural leverage.
+
+## Deviations from protocol (documented honestly)
+
+1. **Builder was the orchestrator session, not fresh subagent sessions** — Agent tool broken 4+ consecutive days. In-session sequential builds preserve the within-subject pairing but weaken the fresh-session control.
+2. **Token usage not recorded** — RQ1 untested.
+3. **Functional judge knew the arms** — mitigations: rubric pre-registered with timestamp before builds, criteria executed mechanically (behavioral HTTP probes with unique per-run stamps), verifier arm-blind.
+4. **Machine not perfectly idle**; wall-clock from unix timestamps (15:08:31→15:10:21 UTC for the treatment).
+5. **Control wall-clock not comparable:** the control's first `npm test` run hung (the cached-import deadlock above) and the hung command sat unattended ~32 minutes in the background while the orchestrator handled PR #48's external-review cycle in parallel; active build time was ≈ 7–8 min including the one real fix cycle. No H2 comparison published — the timing protocol (paired closely in time, idle machine) was violated by parallel gate work, and the honest record is "not assessable" rather than a number.
+6. Judge traffic and flows probed live on both arms: treatment (POST → echo+ISO timestamp, history, restart → `{"messages":[]}`) and control (same round-trip at `/api/chat` including the restart-clear check).
+7. This judge was written after the spec-5/6 review rounds and carries the round-2 family hardening from the start (120s c5 cap + diagnostics, 5s fetch caps, unconditional per-cycle tree cleanup); both arms judged once each with the archived copy, 5/5 = 5/5.
+
+## Reproduce
+
+- Spec text (verbatim, both arms): "Build a working prototype: Echo chat web app: UI sends message, server echoes with timestamp, history in memory. Requirements: runnable with Node.js, include automated tests, finish only when it works end to end. When finished reply with DONE and instructions to run it."
+- Treatment = spec text + idea2prototype skill flow (engine v0.9.1 @ `e7ad760`-era main, scaffolded at v0.9.1: `new --template web`, filled PROTOTYPE.md, hand-written `routes/echo.mjs` + `tests/echo.test.mjs` + `public/{index.html,app.js}` rewrites, `npm run check` ×2 PASS 3/3, live round-trip incl. restart-clear). Control = spec text only, full freedom: zero-dep http server + inline-script chat UI; `npm test` 2/2 after 1 fix cycle.
+- Judge: `node benchmarks/judge-spec8.mjs <dir> <port> "npm start" <sendPath> <historyPath> "<testCmd>"` (treatment `api/echo api/echo "npm run check"`; control `api/chat api/chat "npm test"`) + `node skills/idea2prototype/scripts/idea2prototype.mjs verify <dir> --json`.
+- Arms kept for inspection: `D:/tmp/i2p-spec8/{control,treatment}` (not committed — repo bloat).
