@@ -5,6 +5,6 @@
   "private": true,
   "bin": { "{{slug}}": "cli.mjs" },
   "scripts": {
-    "check": "node \"__IDEA2PROTOTYPE_BIN__\" check"
+    "check": "__IDEA2PROTOTYPE_CMD__"
   }
 }
