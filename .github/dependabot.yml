@@ -1,0 +1,12 @@
+# Dependabot keeps the SHA-pinned github-actions current: each week it opens a
+# PR bumping the pinned commit SHAs (the comments beside them carry the tag).
+# Nothing auto-merges — every bump goes through the same review gates as any
+# other change to this repo.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
