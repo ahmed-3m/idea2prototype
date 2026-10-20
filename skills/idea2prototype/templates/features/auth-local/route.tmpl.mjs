@@ -11,39 +11,51 @@ const SECRET_FILE = join(process.cwd(), 'data', '.auth-secret');
 const COOKIE_NAME = 'i2p_session';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-let usersCache = null;
+let usersReady = null; // memoized cold load: concurrent first callers share ONE array
 let secretCache = null;
 
-async function loadUsers() {
-  if (usersCache) return usersCache;
-  let raw = null;
-  try {
-    raw = await readFile(USERS_FILE, 'utf8');
-  } catch {} // no users file yet — first run
-  if (raw !== null) {
-    try {
-      usersCache = JSON.parse(raw);
-    } catch {
-      usersCache = null;
-    }
+function loadUsers() {
+  if (!usersReady) {
+    usersReady = (async () => {
+      let usersCache = null;
+      let raw = null;
+      try {
+        raw = await readFile(USERS_FILE, 'utf8');
+      } catch (err) {
+        if (err?.code !== 'ENOENT') console.error(`[auth] could not read users store (${err?.code ?? err}) — starting empty`);
+      }
+      if (raw !== null) {
+        try {
+          usersCache = JSON.parse(raw);
+        } catch {
+          usersCache = null;
+        }
+      }
+      if (raw === null || usersCache === null || !Array.isArray(usersCache)) {
+        // A users store that exists but is corrupt must never be silently
+        // wiped — the next register would overwrite every account. Quarantine,
+        // say so, start empty (accounts can be re-registered; the old file is
+        // preserved). If the rename itself fails, say THAT loudly too.
+        if (raw !== null) {
+          const quarantine = `${USERS_FILE}.corrupt-${Date.now().toString(36)}`;
+          try {
+            await rename(USERS_FILE, quarantine);
+            console.error(`[auth] users store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+          } catch (err) {
+            console.error(`[auth] users store is corrupt AND could not be quarantined (${err?.code ?? err}) — the next write will overwrite it`);
+          }
+        }
+        usersCache = [];
+      }
+      return usersCache;
+    })();
   }
-  if (raw === null || usersCache === null || !Array.isArray(usersCache)) {
-    // A users store that exists but is corrupt must never be silently wiped —
-    // the next register would overwrite every account. Quarantine, say so,
-    // start empty (accounts can be re-registered; the old file is preserved).
-    if (raw !== null) {
-      const quarantine = `${USERS_FILE}.corrupt-${Date.now().toString(36)}`;
-      await rename(USERS_FILE, quarantine).catch(() => {});
-      console.error(`[auth] users store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
-    }
-    usersCache = [];
-  }
-  return usersCache;
+  return usersReady;
 }
 
 async function persistUsers() {
   await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(USERS_FILE, JSON.stringify(usersCache, null, 2));
+  await writeFile(USERS_FILE, JSON.stringify(await loadUsers(), null, 2));
 }
 
 async function getSecret() {

@@ -131,7 +131,11 @@ test('a corrupt api-crud store is quarantined, not silently wiped', async (t) =>
   const child = spawn(process.execPath, ['server.mjs'], { cwd: projectDir, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const stop = async () => {
     if (child.exitCode !== null) return;
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    } else {
+      child.kill('SIGKILL'); // the server has no children — a bare kill suffices
+    }
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 3_000);
       child.once('exit', () => { clearTimeout(timer); resolve(); });
@@ -161,15 +165,19 @@ test('a corrupt api-crud store is quarantined, not silently wiped', async (t) =>
     const kept = await readFile(join(projectDir, 'data', quarantined));
     assert.equal(kept.length, garbage.length); // original bytes preserved for recovery
 
-    await fetch(`http://127.0.0.1:${port}/api/item`, {
+    const post = await fetch(`http://127.0.0.1:${port}/api/item`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'after-garbage' }),
       signal: AbortSignal.timeout(5_000),
     });
+    assert.equal(post.status, 201);
     const after = JSON.parse(await readFile(join(projectDir, 'data', 'item.json'), 'utf8'));
     assert.equal(after.length, 1); // the new store has only the new write…
-    assert.equal(kept.length, garbage.length); // …and the quarantined data survived it
+    // …and the quarantine file still holds the ORIGINAL bytes on disk (not a
+    // stale in-memory buffer) — a POST that clobbered it would fail here.
+    const keptOnDisk = await readFile(join(projectDir, 'data', quarantined));
+    assert.equal(keptOnDisk.length, garbage.length);
   } finally {
     await stop(); // kill inside the test so the scaffold's rm after-hook never races a live cwd
   }

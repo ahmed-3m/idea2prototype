@@ -22,7 +22,9 @@ function load() {
       let raw = null;
       try {
         raw = await readFile(STORE_PATH, 'utf8');
-      } catch {} // ENOENT — first run, no store yet
+      } catch (err) {
+        if (err?.code !== 'ENOENT') console.error(`[jobs] could not read store (${err?.code ?? err}) — starting empty`);
+      }
       if (raw !== null) {
         try {
           jobs = JSON.parse(raw);
@@ -36,8 +38,12 @@ function load() {
         // it, say so loudly, start empty.
         if (raw !== null) {
           const quarantine = `${STORE_PATH}.corrupt-${Date.now().toString(36)}`;
-          await rename(STORE_PATH, quarantine).catch(() => {});
-          console.error(`[jobs] store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+          try {
+            await rename(STORE_PATH, quarantine);
+            console.error(`[jobs] store is not a valid JSON list — quarantined as ${quarantine}; starting empty`);
+          } catch (err) {
+            console.error(`[jobs] store is corrupt AND could not be quarantined (${err?.code ?? err}) — the next write will overwrite it`);
+          }
         }
         jobs = [];
       }

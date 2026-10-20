@@ -1,7 +1,7 @@
 // Version-consistency guard: the engine version is duplicated across 8 in-repo
 // fields (engine const, package.json, plugin manifest, every template marker)
-// plus a CHANGELOG section — this test turns that manual checklist into a
-// failing test so drift can't ship.
+// plus a CHANGELOG section AND the README status line — this test turns that
+// manual checklist into a failing test so drift can't ship.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile, readdir } from 'node:fs/promises';

@@ -54,7 +54,7 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 
 Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON API + route manifest), `cli` (arg-parsed tool), `worker` (persistent job queue with retries), `library` (importable module: `createStore` + `memoAsync`). All Node >= 18.17, built-in `node:test`, zero installs — ever.
 
-**JSON stores are single-writer.** Every `data/*.json` store is an in-memory list persisted on write by ONE server process — run two servers on the same project dir and each will clobber the other's acknowledged writes on its next persist (last writer wins the whole file). A store that fails to parse at boot is never silently wiped: it is quarantined as `data/<name>.json.corrupt-<timestamp>` (the original bytes are preserved for recovery) and the process starts empty with a loud stderr note. `auth-local` sessions are stateless HMAC tokens — logout clears the browser cookie only; a copied token stays valid until it expires.
+**JSON stores are single-writer.** Every `data/*.json` store is an in-memory list persisted on write by ONE server process — run two servers on the same project dir and each will clobber the other's acknowledged writes on its next persist (last writer wins the whole file). A store that fails to parse on first read is never silently wiped: it is quarantined as `data/<name>.json.corrupt-<timestamp>` (the original bytes are preserved for recovery) and the process starts empty with a loud stderr note. `auth-local` sessions are stateless HMAC tokens — logout clears the browser cookie only; a copied token stays valid until it expires.
 
 ## Quickstart
 
