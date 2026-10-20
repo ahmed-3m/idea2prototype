@@ -95,7 +95,9 @@ Two independent layers, applied **identically to both arms**:
 | 2026-10-19 | ZCode / GLM-5.3 | spec 2 treatment | n/a (in-session) | ~41s (~24s scaffold→PASS) | PASS 3/3 | 5/5 |
 | 2026-10-20 | ZCode / GLM-5.3 | spec 3 control | n/a (in-session) | ~16s | PASS (2/3, boot skip) | 5/5 |
 | 2026-10-20 | ZCode / GLM-5.3 | spec 3 treatment | n/a (in-session) | ~47s | PASS (2/3, boot skip) | 5/5 |
+| 2026-10-20 | ZCode / GLM-5.3 | spec 4 control | n/a (in-session) | ~76s (incl. test-runner fix) | PASS (2/3, boot skip) | 5/5 |
+| 2026-10-20 | ZCode / GLM-5.3 | spec 4 treatment | n/a (in-session) | ~89s | PASS 3/3 | 5/5 |
 
-Run details + deviations: `benchmarks/runs/` (spec-1 paired NOTES; spec-2 paired NOTES). Both spec-2 arms functionally identical (5/5); treatment wrote 23% fewer hand-written LOC with 2× tests and zero runner-compat failures — control's from-scratch `npm test` broke on Node 24/Windows. Spec 3 (micro-CLI) is the first honest harness loss on speed and LOC — control built ~16s vs ~47s with less hand-written code (129 vs 149 LOC); treatment still shipped 2× tests + spec discipline, and both arms verified PASS / judged 5/5.
+Run details + deviations: `benchmarks/runs/` (spec-1 paired NOTES; spec-2 paired NOTES). Both spec-2 arms functionally identical (5/5); treatment wrote 23% fewer hand-written LOC with 2× tests and zero runner-compat failures — control's from-scratch `npm test` broke on Node 24/Windows. Spec 3 (micro-CLI) is the first honest harness loss on speed and LOC — control built ~16s vs ~47s with less hand-written code (129 vs 149 LOC); treatment still shipped 2× tests + spec discipline, and both arms verified PASS / judged 5/5. Spec 4 (web app): the harness's home turf — treatment wrote ~43% fewer hand-written LOC (~149 vs ~260) with 3× tests (6 vs 2) and a full-depth verify (3/3 vs boot-skip 2/3); control was faster again on wall-clock (~76s vs ~89s, small app + warmed builder) and needed its recurring test-runner compat fix mid-build; both judged 5/5.
 
 Submit results as PRs editing this table; include raw transcripts when possible.
