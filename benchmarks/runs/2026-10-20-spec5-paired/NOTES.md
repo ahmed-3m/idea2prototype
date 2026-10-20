@@ -1,0 +1,35 @@
+# Spec 5 — paired run (Quiz web app), 2026-10-20
+
+Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in `D:/tmp/i2p-spec5/RUBRIC.md`, 2026-10-20T14:06:45Z; copy in this directory): `c1 app starts per its own documented command (HTML at /) · c2 five hard-coded questions in served source · c3 score-at-end logic (score identifier + vs-total presentation) · c4 restart control + quiz-state reset · c5 own tests pass via their documented command`. Because a quiz web app is UI-centric and may legitimately have no HTTP protocol for answers/scoring, c2–c4 were pre-registered as SERVED-SOURCE predicates (see deviations 6–7). Same builder, same model (GLM-5.3), same machine; arms run sequentially — treatment first (order alternated from spec 7, which ran control first). Criteria executed mechanically by `benchmarks/judge-spec5.mjs`.
+
+## Results
+
+| Arm | Wall-clock (build) | Hand-written | Tests | Verifier | Judge |
+|---|---|---|---|---|---|
+| Treatment | ~4m08s (14:07:11→14:11:19Z) | 4 files / ~148 LOC (scaffold gifted server.mjs, package.json, README, styles, contract tests) | 6 | PASS 3/3 | 5/5 |
+| Control | ~7m28s (14:11:53→14:19:21Z, incl. 2 fix cycles) | 6 files / ~184 LOC (everything) | 3 | PASS (2/3, boot skip) | 5/5 |
+
+- **First treatment wall-clock win since spec 2 — and it came from the harness's tests, not its scaffolding.** The control's from-scratch test harness needed two fix cycles (undici keep-alive sockets blocked `server.close()` → hang; `listen()` races the import → `address()` null; plus a stale-port kill after the hang was terminated). The scaffold's test harness booted the app through its own `start(0)`/`close()` contract and was green on the first run. Caveat: wall-clock includes the in-session orchestrator's tool latencies (deviation 1); the ~3m20s delta is directionally right but not a clean-subagent measurement.
+- **Hand-written LOC: treatment ~148 vs control ~184 (−20%).** Modest — the smallest harness LOC win so far, for the expected reason: a quiz is UI-heavy, and the UI (question card, options, score screen, restart) is hand-written in BOTH arms; the scaffold only gifted the server shell + contract tests, and no `add` feature fit the spec (no persistence, no accounts — exactly the "don't add what the spec doesn't call for" discipline).
+- **Tests: 6 vs 3 (2×).** Treatment = 3 scaffold contract tests + 3 quiz route tests (answers hidden from GET, exact 1-of-5 grading, 400 on malformed body). Control = grading unit tests + page/404 server test.
+- **Verifier depth: treatment PASS 3/3 vs control PASS 2/3 (boot skip — `server.mjs` listens at import and exports `{ server }`, not a `start()`; same class as the spec-4/7 controls).**
+- Hypotheses: H1 (tokens) **not measurable this run** — deviation 2. H2 (wall-clock ↓) **passed this run** (first since spec 2; driver = control fix cycles on its hand-rolled test harness, the exact failure class the scaffold's harness removes). H3 (reliability) no discrimination — both PASS verifier; control needed fixes to get there. H4 (function) parity — 5/5 = 5/5, mechanically judged.
+- Arm shapes (both legitimate readings of the spec): treatment = questions hard-coded in `routes/quiz.mjs`, served as JSON via `GET /api/quiz` (no answers leaked), graded server-side via `POST /api/quiz/answers`; control = questions in a shared `grade.mjs` loaded by the browser as an ES module over HTTP, grading client-side. The judge's collector was hardened to follow BOTH shapes (deviation 7).
+
+## Deviations from protocol (documented honestly)
+
+1. **Builder was the orchestrator session, not fresh subagent sessions** — Agent tool broken 4+ consecutive days ("No reasoning level selected"). In-session sequential builds preserve the within-subject pairing but weaken the fresh-session control; wall-clock includes orchestrator tool latencies, so both arms' times are upper bounds inflated by the same builder.
+2. **Token usage not recorded** — RQ1 untested.
+3. **Functional judge knew the arms** — mitigations: rubric pre-registered with timestamp before builds, criteria executed mechanically, verifier arm-blind.
+4. **Machine not perfectly idle**; wall-clock from unix timestamps (14:07:11→14:11:19, 14:11:53→14:19:21 UTC), rounded honestly.
+5. No persistent store in either arm, so the judge-re-runs-poison-stores hazard did not apply (c5-first discipline kept anyway).
+6. **UI criteria are source-presence predicates, pre-registered up front** — a zero-dependency blind judge cannot drive a browser, so c2–c4 check the served source (fetching the app's own HTML/scripts/API payloads) instead of rendered behavior. A broken score line could pass c3; this weakness applies identically to both arms.
+7. **The judge's source collector was hardened AFTER both arms scored 4/5, then both arms were re-judged (5/5 unchanged for c1/c3/c4/c5, c2 4→5 on BOTH arms identically).** The pre-registered collector (root HTML + `<script src>` assets) missed both natural quiz shapes: the treatment's questions arrive as JSON from `GET /api/quiz`, the control's live in a module reached by an inline `import '/grade.mjs'`. Both apps demonstrably present 5 questions in the browser — the collection was the defect, not the apps. Hardened per the spec-4/7 precedent: the collector now follows, mechanically and same-origin only, `<script src>` attributes, static import specifiers, and first-arg `fetch('…')` literals (GET; POST-only endpoints answer 405/404 and are skipped), bounded to 3 rounds / 20 assets. Criteria text and predicates unchanged; original strict-collector results preserved here (both arms 4/5, c2 FAIL ×2). Process lesson recorded for future rubric authors: enumerate content-delivery shapes (inline / script-src / module-import / API-JSON) BEFORE pre-registering a served-source criterion.
+8. Judge traffic and quiz flow probed live: treatment `POST /api/quiz` all-correct → `{score:5,total:5}`; control page + `/grade.mjs` served 200 with quiz UI markup.
+
+## Reproduce
+
+- Spec text (verbatim, both arms): "Build a working prototype: Quiz web app: 5 hard-coded questions, score at the end, restart button. Requirements: runnable with Node.js, include automated tests, finish only when it works end to end. When finished reply with DONE and instructions to run it."
+- Treatment = spec text + idea2prototype skill flow (engine v0.9.1 @ `b8aacf4`: `new --template web`, filled PROTOTYPE.md, hand-written `routes/quiz.mjs` + `tests/quiz.test.mjs` + `public/{index.html,app.js}` edits, `npm run check` ×2 PASS 3/3, live API roundtrip probe). Control = spec text only, full freedom, zero-dep http server + shared grading module + inline client-side quiz; `npm test` green after 2 fix cycles.
+- Judge: `node benchmarks/judge-spec5.mjs <dir> <port> "npm start" "<testCmd>"` (treatment testCmd `npm run check`, control `npm test`) + `node skills/idea2prototype/scripts/idea2prototype.mjs verify <dir> --json`.
+- Arms kept for inspection: `D:/tmp/i2p-spec5/{control,treatment}` (not committed — repo bloat).
