@@ -1,6 +1,6 @@
 # Spec 7 — paired run (Bookmarks API + tag filter), 2026-10-20
 
-Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in `D:/tmp/i2p-spec7/RUBRIC.md`, 2026-10-20T09:53:04Z): `c1 API starts per its own README · c2 create bookmark (url+title+tags) · c3 update + delete roundtrip · c4 ?tag=x returns only matches AND absent tag → empty · c5 own tests pass via their documented command`. Same builder, same model (GLM-5.3), same machine; arms run sequentially — control first (order alternated from spec 4, which ran treatment first). Criteria executed mechanically by `benchmarks/judge-spec7.mjs` (judge-spec4 conventions: c5 runs first so judge writes can't poison fixtures; unique per-run tags make the only-matches assertion safe against pre-existing data).
+Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in `D:/tmp/i2p-spec7/RUBRIC.md`, 2026-10-20T09:53:04Z): `c1 API starts per its own README · c2 create bookmark (url+title+tags) · c3 update + delete roundtrip · c4 ?tag=x returns only matches AND absent tag → empty · c5 own tests pass via their documented command`. Same builder, same model (GLM-5.3), same machine; arms run sequentially — control first (order alternated from spec 4, which ran treatment first). Criteria executed mechanically by `benchmarks/judge-spec7.mjs` (judge-spec4 conventions: c5 runs first so judge writes can't poison fixtures; unique per-run tags plus an every()-exclusion assertion — added in review hardening, deviation 6 — make the only-matches criterion safe against pre-existing data and non-vacuous).
 
 ## Results
 
@@ -23,6 +23,7 @@ Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in
 3. **Functional judge knew the arms** — mitigations: rubric pre-registered with timestamp before builds, criteria executed mechanically, verifier arm-blind.
 4. **Machine not perfectly idle**; wall-clock from unix timestamps, rounded honestly (~37s = 09:53:28→09:54:05, ~46s = 09:54:14→09:55:00 UTC).
 5. The spec-4 finding recurred on this control arm too: **`verify` never exits on foreign servers that listen at import time and export nothing** (verdict captured via output redirect + timed kill). Same engine fix queued.
+6. **The judge script was hardened after external review of the results PR, then both arms re-judged (5/5 unchanged).** The review caught a genuinely vacuous c4: bookmark A was deleted in c3, so `!only.some(A)` was trivially true and no `every(TAG_B)` exclusion was asserted — an arm returning ALL items on `?tag=` would have passed. Hardened: a third no-tag bookmark (C) stays live as the non-matching case, exclusion is asserted with `every()` + `!some(C)`, both c4 fetches require HTTP 200 with a list body (a crashing endpoint no longer reads as "empty"), c1 joins the recorded-flags integrity pattern, POSIX group-kill guards ESRCH, `id != null` replaces the falsy-id check, PUT may answer 200 or 204 (204 confirmed via GET), and common envelope shapes unwrap to lists. Criteria unchanged; re-judged verdicts identical.
 
 ## Reproduce
 

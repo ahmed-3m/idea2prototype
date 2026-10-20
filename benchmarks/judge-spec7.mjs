@@ -34,6 +34,7 @@ const C4 = 'c4 tag filter: only matches + absent tag is empty';
 let c2Recorded = false;
 let c3Recorded = false;
 let c4Recorded = false;
+let c1Recorded = false;
 
 function start() {
   return spawn(startCmd, {
@@ -47,7 +48,13 @@ function start() {
 function stop(child) {
   if (!child || child.exitCode !== null) return;
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
-  else process.kill(-child.pid, 'SIGKILL');
+  else {
+    // ESRCH if the group already exited on its own — cleanup must never
+    // abort the judge before the score is computed.
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {}
+  }
 }
 async function waitReady(deadlineMs = 15_000) {
   const deadline = Date.now() + deadlineMs;
@@ -61,7 +68,9 @@ async function waitReady(deadlineMs = 15_000) {
   }
   return false;
 }
-const asList = (v) => (Array.isArray(v) ? v : []);
+// Lists may be bare arrays or wrapped in a common envelope key; everything
+// else reads as [] so shape problems fail the criterion instead of crashing.
+const asList = (v) => (Array.isArray(v) ? v : Array.isArray(v?.bookmarks) ? v.bookmarks : Array.isArray(v?.data) ? v.data : Array.isArray(v?.items) ? v.items : []);
 
 // c5 — the project's own tests pass via its documented command (runs first)
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
@@ -77,6 +86,7 @@ try {
   child = start();
   const ready = await waitReady();
   check('c1 API starts using its documented command', ready);
+  c1Recorded = true;
   if (!ready) throw new Error('app did not become ready — skipping c2/c4 HTTP flow');
 
   const mk = (url, title, tags) =>
@@ -88,8 +98,16 @@ try {
 
   const a = await mk('https://judge-a.dev', 'Judge A', [TAG_A]);
   const b = await mk('https://judge-b.dev', 'Judge B', [TAG_B]);
+  // A live bookmark that must NEVER appear in ?tag=TAG_B results — with the
+  // deleted A no longer usable as the non-matching case, C is what makes the
+  // every() exclusion assertion non-vacuous.
+  const c = await mk('https://judge-c.dev', 'Judge C (no tags)', []);
   const aBody = a.status === 201 || a.status === 200 ? await a.json() : null;
-  check(C2, (a.status === 201 || a.status === 200) && (b.status === 201 || b.status === 200) && !!aBody?.id);
+  check(
+    C2,
+    (a.status === 201 || a.status === 200) && (b.status === 201 || b.status === 200) &&
+      (c.status === 201 || c.status === 200) && aBody?.id != null,
+  );
   c2Recorded = true;
 
   const put = await fetch(itemUrl(aBody.id), {
@@ -97,26 +115,40 @@ try {
     headers: JSON_HEADERS,
     body: JSON.stringify({ title: 'Judge A renamed' }),
   });
-  const putBody = put.status === 200 ? await put.json() : null;
+  // 200-with-body or 204-no-body are both legitimate update acknowledgements;
+  // for 204 confirm the new title via GET before deleting.
+  let renamed;
+  if (put.status === 200) {
+    renamed = (await put.json().catch(() => null))?.title === 'Judge A renamed';
+  } else if (put.status === 204) {
+    renamed = (await (await fetch(itemUrl(aBody.id))).json().catch(() => null))?.title === 'Judge A renamed';
+  }
   const del = await fetch(itemUrl(aBody.id), { method: 'DELETE' });
   const gone = await fetch(itemUrl(aBody.id));
   check(
     C3,
-    put.status === 200 && putBody?.title === 'Judge A renamed' &&
-      (del.status === 200 || del.status === 204) && gone.status === 404,
+    renamed && (del.status === 200 || del.status === 204) && gone.status === 404,
   );
   c3Recorded = true;
 
-  const only = asList(await (await fetch(listUrl(TAG_B))).json().catch(() => null));
-  const none = asList(await (await fetch(listUrl(`${stamp}-never`))).json().catch(() => null));
+  // c4 — tag filter. Status must be 200 and the body a list (a crashing or
+  // HTML-erroring endpoint must fail, not read as "empty"). Exclusion is
+  // asserted with every(): a filter that returns everything fails.
+  const onlyRes = await fetch(listUrl(TAG_B));
+  const only = asList(await onlyRes.json().catch(() => null));
+  const noneRes = await fetch(listUrl(`${stamp}-never`));
+  const none = asList(await noneRes.json().catch(() => null));
   check(
     C4,
-    only.some((x) => x.url === 'https://judge-b.dev' && (x.tags ?? []).includes(TAG_B)) &&
-      !only.some((x) => x.url === 'https://judge-a.dev') &&
+    onlyRes.status === 200 && noneRes.status === 200 &&
+      only.some((x) => x.url === 'https://judge-b.dev' && (x.tags ?? []).includes(TAG_B)) &&
+      only.every((x) => (x.tags ?? []).includes(TAG_B)) &&
+      !only.some((x) => x.url === 'https://judge-c.dev') &&
       none.length === 0,
   );
   c4Recorded = true;
 } catch (err) {
+  if (!c1Recorded) check('c1 API starts using its documented command', false);
   if (!c2Recorded) check(C2, false);
   if (!c3Recorded) check(C3, false);
   if (!c4Recorded) check(C4, false);
