@@ -6,7 +6,7 @@ Pre-registered rubric (written BEFORE either arm ran, archived with timestamp in
 
 | Arm | Wall-clock (build) | Hand-written | Tests | Verifier | Judge |
 |---|---|---|---|---|---|
-| Treatment | ~4m08s (14:07:11→14:11:19Z) | 4 files / ~148 LOC (scaffold gifted server.mjs, package.json, README, styles, contract tests) | 6 | PASS 3/3 | 5/5 |
+| Treatment | ~4m08s (14:07:11→14:11:19Z) | 5 files / ~165 LOC full-set (148 excluding the rewritten index.html — see the LOC bullet) | 6 | PASS 3/3 | 5/5 |
 | Control | ~7m28s (14:11:53→14:19:21Z, incl. 2 fix cycles) | 6 files / ~184 LOC (everything) | 3 | PASS (2/3, boot skip) | 5/5 |
 
 - **First treatment wall-clock win since spec 1 — and it came from the harness's tests, not its scaffolding.** (Spec 2's wall-clock was neutral-to-control, ~39s vs ~41s — its treatment win was the ~24s scaffold→PASS sub-measure only.) The control's from-scratch test harness needed two fix cycles (undici keep-alive sockets blocked `server.close()` → hang; `listen()` races the import → `address()` null; plus a stale-port kill after the hang was terminated). The scaffold's test harness booted the app through its own `start(0)`/`close()` contract and was green on the first run. Caveat: wall-clock includes the in-session orchestrator's tool latencies (deviation 1); the ~3m20s delta is directionally right but not a clean-subagent measurement.

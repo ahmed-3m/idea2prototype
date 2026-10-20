@@ -73,10 +73,9 @@ async function waitReady(deadlineMs = 15_000) {
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
 const t = spawnSync(testCmd, { shell: true, cwd: projectDir, encoding: 'utf8', env, timeout: 120_000 });
 if (t.status !== 0) {
-  console.log(`  c5 diagnostics: exit ${t.status}${t.timedOut ? ' (timed out at 120s)' : ''}${t.error ? ` ${t.error}` : ''}`);
   // Diagnostics on failure — the verdict is still binary, but the output tail
   // makes transient failures (port races etc.) distinguishable from real ones.
-  console.log('  c5 diagnostics: exit', t.status, t.error ? String(t.error) : '');
+  console.log(`  c5 diagnostics: exit ${t.status}${t.timedOut ? ' (timed out at 120s)' : ''}${t.error ? ` ${t.error}` : ''}`);
   const tail = (s) => String(s ?? '').split(/\r?\n/).filter(Boolean).slice(-6).map((l) => `    ${l}`).join('\n');
   if (t.stdout) console.log(tail(t.stdout));
   if (t.stderr) console.log(tail(t.stderr));
