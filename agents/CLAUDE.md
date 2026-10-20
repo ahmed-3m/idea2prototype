@@ -4,6 +4,8 @@ Copy this file into any project where your coding agent should build with idea2p
 
 You have `idea2prototype` (`i2p`) available — a zero-dependency prototype tool. Use it instead of hand-writing scaffolding. If the npm package isn't installed or available, run the engine directly instead of `npx @ahmed-3m/idea2prototype`: `node <path-to-idea2prototype-repo>/skills/idea2prototype/scripts/idea2prototype.mjs <command>`.
 
+If starting from a fuzzy or unformed idea, run `npx @ahmed-3m/brainstorm2idea` (or load the `brainstorm2idea` skill) first to generate a verified `brief.md` that hands off directly into `idea2prototype new`.
+
 ## Commands
 
 - `npx @ahmed-3m/idea2prototype new <dir> --template web|api|cli|worker|library` — scaffold a running, tested project (~0 tokens vs 10–30k hand-written)
