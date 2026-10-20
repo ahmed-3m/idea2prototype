@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { start } from '../server.mjs';
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -35,7 +36,7 @@ test('echo job runs in the background and persists', async () => {
     assert.equal(settled.attempts, 1);
 
     // the store file exists — jobs survive a server restart
-    assert.ok(await import('node:fs').then((fs) => fs.existsSync('data/jobs.json')));
+    assert.ok(existsSync('data/jobs.json'));
   } finally {
     await app.close();
   }

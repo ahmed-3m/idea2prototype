@@ -9,20 +9,35 @@ const STORE_PATH = join(process.cwd(), 'data', 'jobs.json');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let jobs = null;
+let ready = null; // memoized cold load: concurrent first callers share ONE array
 
-async function load() {
-  if (jobs) return jobs;
-  try {
-    jobs = JSON.parse(await readFile(STORE_PATH, 'utf8'));
-  } catch {
-    jobs = [];
+function load() {
+  if (!ready) {
+    ready = (async () => {
+      try {
+        jobs = JSON.parse(await readFile(STORE_PATH, 'utf8'));
+      } catch (err) {
+        if (err?.code !== 'ENOENT') {
+          console.error(`[jobs] could not read ${STORE_PATH} (${err?.message ?? err}) — starting empty`);
+        }
+        jobs = [];
+      }
+      return jobs;
+    })();
   }
-  return jobs;
+  return ready;
 }
 
-async function persist() {
-  await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+// Writes are chained: two in-flight writeFile calls on the same store can
+// finish out of order — a staler snapshot written last would resurrect
+// finished jobs as queued.
+let persistChain = Promise.resolve();
+function persist() {
+  persistChain = persistChain.then(async () => {
+    await mkdir(join(process.cwd(), 'data'), { recursive: true });
+    await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+  });
+  return persistChain;
 }
 
 const HANDLERS = {
@@ -43,6 +58,7 @@ export function registerHandler(type, handler) {
 
 export async function reset() {
   jobs = [];
+  ready = Promise.resolve(jobs); // keep the memo coherent — do not re-read disk
   await persist();
 }
 

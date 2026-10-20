@@ -4,7 +4,8 @@
 //   import { enqueue, list, registerHandler } from './jobs.mjs';
 // Handlers run in THIS server process — the queue drains whenever jobs are
 // enqueued (no long-lived timer; an empty queue costs nothing and never keeps
-// the server from closing).
+// the server from closing). Handlers must settle: one that awaits forever
+// stalls the whole queue until the process restarts.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,20 +14,35 @@ const STORE_PATH = join(process.cwd(), 'data', 'jobs.json');
 const MAX_ATTEMPTS = 3;
 
 let jobs = null;
+let ready = null; // memoized cold load: concurrent first callers share ONE array
 
-async function load() {
-  if (jobs) return jobs;
-  try {
-    jobs = JSON.parse(await readFile(STORE_PATH, 'utf8'));
-  } catch {
-    jobs = [];
+function load() {
+  if (!ready) {
+    ready = (async () => {
+      try {
+        jobs = JSON.parse(await readFile(STORE_PATH, 'utf8'));
+      } catch (err) {
+        if (err?.code !== 'ENOENT') {
+          console.error(`[jobs] could not read ${STORE_PATH} (${err?.message ?? err}) — starting empty`);
+        }
+        jobs = [];
+      }
+      return jobs;
+    })();
   }
-  return jobs;
+  return ready;
 }
 
-async function persist() {
-  await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+// Writes are chained, not concurrent: enqueue and the drain both persist, and
+// two in-flight writeFile calls on the same store can finish out of order —
+// a staler snapshot written last would resurrect finished jobs as queued.
+let persistChain = Promise.resolve();
+function persist() {
+  persistChain = persistChain.then(async () => {
+    await mkdir(join(process.cwd(), 'data'), { recursive: true });
+    await writeFile(STORE_PATH, JSON.stringify(jobs, null, 2));
+  });
+  return persistChain;
 }
 
 // Built-in demo handlers — register your own with registerHandler().
@@ -93,14 +109,19 @@ function kick() {
   if (draining) return;
   draining = (async () => {
     try {
-      // processNext returning false means "no queued job" — re-check once more
-      // inside the same tick (an enqueue can push between the check and the
-      // loop's synchronous exit; the queued-recheck below closes that window).
+      // Race-free by construction: the while-condition, the loop exit, and
+      // `draining = null` below share one synchronous continuation, so a
+      // concurrent enqueue either pushes into the shared array BEFORE the
+      // final condition check (this loop picks it up) or runs AFTER
+      // `draining = null` (its own kick() starts a fresh drain).
       while ((await load()).some((j) => j.status === 'queued')) {
         await processNext();
       }
     } finally {
       draining = null;
     }
-  })().catch(() => {});
+  })().catch((err) => {
+    // A dead drain strands queued jobs until the next enqueue — never silent.
+    console.error('[jobs] drain aborted:', err?.message ?? err);
+  });
 }
