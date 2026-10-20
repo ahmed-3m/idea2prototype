@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,34 @@ test('scaffolds the web template and passes check', async (t) => {
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   assert.match(stdout, /boot\s+PASS/);
+});
+
+// #43: the scaffold's check script must keep invoking the engine that built it,
+// but HOW depends on where the engine ran from. A source checkout pins the
+// local path (stable across machines-less moves); a published install (npx
+// cache, npm i -g) lives in a volatile node_modules dir, so it pins registry
+// coordinates instead — npm cache clean or a second machine re-fetches.
+test('check script pins the engine path from a checkout, registry coordinates from a published install', async (t) => {
+  const PKG = '@ahmed-3m/idea2prototype';
+
+  // checkout form: this suite runs the engine straight from the repo
+  const sourceRoot = await mkdtemp(join(tmpdir(), 'i2p-src-'));
+  t.after(() => rm(sourceRoot, { recursive: true, force: true }));
+  await i2p(['new', 'from-source', '--template', 'cli'], { cwd: sourceRoot });
+  const pkgSource = JSON.parse(await readFile(join(sourceRoot, 'from-source', 'package.json'), 'utf8'));
+  assert.match(pkgSource.scripts.check, /^node ".+" check$/);
+  assert.ok(!pkgSource.scripts.check.includes(PKG), 'a checkout scaffold must not depend on the registry');
+
+  // published-install form: the same engine files under node_modules/<pkg>/
+  const installRoot = await mkdtemp(join(tmpdir(), 'i2p-pub-'));
+  t.after(() => rm(installRoot, { recursive: true, force: true }));
+  const fakeInstall = join(installRoot, 'node_modules', PKG);
+  await cp(join(HERE, '..', 'skills', 'idea2prototype'), join(fakeInstall, 'skills', 'idea2prototype'), { recursive: true });
+  const fakeEngine = join(fakeInstall, 'skills', 'idea2prototype', 'scripts', 'idea2prototype.mjs');
+  await run(process.execPath, [fakeEngine, 'new', 'from-npx', '--template', 'cli'], { cwd: installRoot, timeout: 60_000 });
+  const pkgNpx = JSON.parse(await readFile(join(installRoot, 'from-npx', 'package.json'), 'utf8'));
+  const version = JSON.parse(await readFile(join(HERE, '..', 'package.json'), 'utf8')).version;
+  assert.equal(pkgNpx.scripts.check, `npx -y ${PKG}@${version} check`);
 });
 
 // Regression for #17: the syntax step used to skip public/ entirely, so a

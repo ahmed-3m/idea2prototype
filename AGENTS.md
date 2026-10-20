@@ -5,7 +5,7 @@ Guidance for coding agents working on THIS repository.
 ## Layout
 
 - `skills/idea2prototype/scripts/idea2prototype.mjs` — the entire engine (single zero-dependency file). Commands: `new`, `add`, `check`, `verify`, `map`, `list`.
-- `skills/idea2prototype/templates/<name>/` — scaffold templates; placeholders `{{name}}`, `{{slug}}`, `{{idea}}`, `__IDEA2PROTOTYPE_BIN__` are replaced by `new`.
+- `skills/idea2prototype/templates/<name>/` — scaffold templates; placeholders `{{name}}`, `{{slug}}`, `{{idea}}`, `__IDEA2PROTOTYPE_CMD__` (check command: engine path from a checkout, registry-pinned npx from a published install) are replaced by `new`.
 - `skills/idea2prototype/templates/features/<feature>/` — feature modules: `route.tmpl.mjs` + `test.tmpl.mjs`, registered in the `FEATURES` map in the engine.
 - `skills/idea2prototype/SKILL.md` — the agent-facing workflow skill (ZCode).
 - `commands/` — ZCode slash commands. `tests/engine.test.mjs` — the e2e suite. `bin/i2p.mjs` — npm shim.

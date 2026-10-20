@@ -121,7 +121,7 @@ The generated CRUD test then needs a session instead of anonymous POSTs — regi
 4. **No destructive operations.** `new` refuses non-empty directories.
 5. **Portable core.** One `.mjs` engine; plugin/skill/npm wrappers are sugar.
 
-One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine that scaffolded it — for a project scaffolded via npx, that's the copy in the local npx cache, so a cleared cache or a second machine means re-running the npx command (or the clone fallback) — and older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). A registry-resolved check — always the current engine, no dependence on the scaffold-time copy — is on the roadmap.
+One deliberate tradeoff: a scaffolded project's `npm run check` invokes the exact engine version that scaffolded it — a clone-scaffolded project pins the sibling engine path, an npx-scaffolded project pins registry coordinates (`npx -y @ahmed-3m/idea2prototype@<version> check`), so a cleared npx cache or a second machine just re-fetches the same version — and older prototypes keep the behavior they were built with (run a newer engine by hand and it reports the drift note). An always-current check remains on the roadmap.
 
 Another boundary worth naming: templates are single-purpose and do not compose with each other — features compose within a template (auth × CRUD, rate-limit, cors, sse, worker-jobs). The one gap this used to leave — a web/api app that also needs background jobs — is closed by `add worker-jobs`, which brings the worker template's persistent queue in as a feature module; anything bigger than that still scaffolds as the primary template with the smaller part hand-built.
 

@@ -12,7 +12,7 @@ PRs welcome — especially new templates and features. The bar is simple: **the 
 
 ## Adding a template (`new --template <name>`)
 
-1. Create `skills/idea2prototype/templates/<name>/` — must include `tests/*.test.mjs` (node:test), `package.json` (with the `__IDEA2PROTOTYPE_BIN__` check script), `.idea2prototype.json` marker, `PROTOTYPE.md`, `README.md`.
+1. Create `skills/idea2prototype/templates/<name>/` — must include `tests/*.test.mjs` (node:test), `package.json` (with the `__IDEA2PROTOTYPE_CMD__` check script), `.idea2prototype.json` marker, `PROTOTYPE.md`, `README.md`.
 2. Zero runtime dependencies. Node >= 18.17 built-ins only.
 3. Add an engine test: scaffold → `check` PASS.
 

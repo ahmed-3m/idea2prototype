@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1
+
+- Fix: scaffolds made through a published install (`npx`, `npm i -g`) now pin registry coordinates in the check script (`npx -y @ahmed-3m/idea2prototype@<scaffold-version> check`) instead of an absolute path into the volatile npx cache — `npm run check` survives `npm cache clean` and runs on a second machine. Checkouts (repo clone, plugin cache) still pin the stable local engine path; the exact-version guarantee is unchanged either way. Template placeholder renamed `__IDEA2PROTOTYPE_BIN__` → `__IDEA2PROTOTYPE_CMD__` to match the broader contract.
+- CI: release publishes now fail loudly when `NPM_TOKEN` is missing instead of skipping with a warning — npmjs is the documented primary channel, and a mirror-only release with a green run would silently invert the README's install claims. Manual `workflow_dispatch` without the secret keeps the visible skip.
+
 ## 0.9.0
 
 - Feature: `add worker-jobs` — the worker template's persistent job queue as a feature module for web/api projects: `enqueue`/`list`/`registerHandler`, `data/jobs.json` persistence, 3 attempts with a terminal `failed` state, disposable demo routes `POST/GET /api/jobs`. `enqueue` auto-kicks a background drain; concurrent enqueues share one serialized drain, so double-processing is designed out, and the drain exits on an empty queue (no long-lived timer; server `close()` unaffected). Closes the previously documented "web app + background jobs" cross-template gap. Review-hardened: memoized cold load (concurrent first enqueues share one array), chained atomic store writes (write-to-tmp + rename; a failed write can't poison later ones or leave a half-written store), honest drain diagnostics, handler contract documented.

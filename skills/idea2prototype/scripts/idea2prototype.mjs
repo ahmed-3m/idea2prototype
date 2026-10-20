@@ -18,7 +18,8 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
+const PKG_NAME = '@ahmed-3m/idea2prototype';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
 const FEATURES_DIR = join(TEMPLATES_DIR, 'features');
@@ -26,6 +27,20 @@ const TEXT_EXTENSIONS = new Set(['.md', '.json', '.html', '.js', '.mjs', '.css',
 
 const SAY = (...args) => console.log(...args);
 const FAIL = (...args) => console.error(...args);
+
+// The scaffold's `npm run check` must keep invoking the engine that built it.
+// From a published install (npx cache, npm i -g) the engine lives inside a
+// volatile node_modules dir that a cache clean or a second machine erases —
+// pin the registry coordinates instead, which re-fetch the exact version.
+// From a source checkout (repo clone, plugin cache) the local path is stable.
+// The JSON.stringify wrapper keeps the command embeddable in package.json.
+function engineCheckCommand() {
+  const enginePath = fileURLToPath(import.meta.url);
+  const command = enginePath.includes(join('node_modules', PKG_NAME))
+    ? `npx -y ${PKG_NAME}@${VERSION} check`
+    : `node "${enginePath}" check`;
+  return JSON.stringify(command).slice(1, -1); // embed inside the template's JSON string value
+}
 
 // ---------------------------------------------------------------------------
 // new
@@ -58,7 +73,7 @@ async function cmdNew(rest) {
     '{{name}}': name,
     '{{slug}}': slug,
     '{{idea}}': idea,
-    __IDEA2PROTOTYPE_BIN__: JSON.stringify(fileURLToPath(import.meta.url)).slice(1, -1),
+    __IDEA2PROTOTYPE_CMD__: engineCheckCommand(),
   });
 
   const markerPath = join(target, '.idea2prototype.json');
