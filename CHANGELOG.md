@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1
 
 Fixes for the critical + high findings of the 2026-10-20 repo review:
 
@@ -11,6 +11,7 @@ Fixes for the critical + high findings of the 2026-10-20 repo review:
 - Fix: boot runs with the project as cwd (as the tests step already did), so `verify <dir>` from elsewhere boots the same app as `verify` from inside — scaffolds used to boot with no routes and no `public/`, foreign servers failed on cwd-relative reads.
 - Fix: `api-crud` POST ignores client-sent `id`/`createdAt` (two POSTs with the same `id` created duplicates, the second unreachable); PUT keeps `createdAt` too. SKILL.md/README composition snippets follow the same body-first pattern.
 - Tests: regression test per finding above (engine suite + the generated template tests that every scaffold runs). The review's seventh finding — `rateLimit()` sharing one bucket map — was fixed independently on main and shipped in 1.0.0.
+- Fix: the upload route's path guard checks the separator boundary (`uploads` + `/`) — a sibling directory sharing the prefix (`uploads-x/`) used to pass the traversal check (flagged in review; served inert either way).
 
 ## 1.0.0
 

@@ -65,6 +65,10 @@ test('upload rejects non-multipart and unknown ids', async () => {
 
     const traversal = await fetch(`${base}/api/uploads/..%2Fserver.mjs`);
     assert.ok(traversal.status === 400 || traversal.status === 404);
+
+    // a sibling directory sharing the prefix (uploads-x) must not pass the guard
+    const sibling = await fetch(`${base}/api/uploads/..%2Fuploads-x%2Fevil.html`);
+    assert.equal(sibling.status, 400);
   } finally {
     await app.close();
   }
