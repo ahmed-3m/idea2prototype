@@ -48,9 +48,36 @@ function load() {
   return ready;
 }
 
-async function persist() {
-  await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(await load(), null, 2));
+// Windows refuses to rename over a file another handle has open (a reader in
+// another process, the search indexer, antivirus) with a transient EPERM/
+// EACCES/EBUSY — measured at 2 in 3 renames under a concurrent reader. Retry
+// briefly instead of failing the write.
+async function renameWithRetry(from, to) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await rename(from, to);
+    } catch (err) {
+      if (attempt >= 20 || !['EPERM', 'EACCES', 'EBUSY'].includes(err?.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 10 * attempt));
+    }
+  }
+}
+
+// Writes are chained, not concurrent: two in-flight writeFile calls on the
+// same file interleave, and a burst of POSTs left a store with trailing
+// garbage — quarantined on the next start, every row gone. Each write goes to
+// a temp file then renames into place (atomic — a crash mid-write never leaves
+// a half-written store), and one failed write does not block later ones.
+let persistChain = Promise.resolve();
+function persist() {
+  const write = persistChain.then(async () => {
+    await mkdir(join(process.cwd(), 'data'), { recursive: true });
+    const tmp = `${STORE_PATH}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(await load(), null, 2));
+    await renameWithRetry(tmp, STORE_PATH);
+  });
+  persistChain = write.catch(() => {});
+  return write;
 }
 
 function requireObject(body) {

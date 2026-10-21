@@ -38,8 +38,13 @@ export function cors({
       vary: 'Origin',
     };
     if (ctx.req.method === 'OPTIONS') return [204, null, corsHeaders];
-    const [status, payload, resHeaders = {}] = await handler(ctx);
-    return [status, payload, { ...corsHeaders, ...resHeaders }];
+    const result = await handler(ctx);
+    // Not [status, payload, headers?] (a streaming handler's undefined, a
+    // contract bug): pass it through untouched — the server streams or 500s
+    // it cleanly; destructuring here would leak "is not iterable".
+    if (!Array.isArray(result)) return result;
+    const [status, payload, resHeaders] = result;
+    return [status, payload, { ...corsHeaders, ...(resHeaders ?? {}) }];
   };
 }
 

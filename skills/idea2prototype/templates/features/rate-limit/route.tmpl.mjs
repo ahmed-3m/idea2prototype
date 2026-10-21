@@ -47,7 +47,12 @@ export function rateLimit({ max = 60, windowMs = 60_000, keyFn } = {}) {
       }];
     }
 
-    const [status, payload, extra] = await handler(ctx);
+    const result = await handler(ctx);
+    // Not [status, payload, headers?] (a streaming handler's undefined, a
+    // contract bug): pass it through untouched — the server streams or 500s
+    // it cleanly; destructuring here would leak "is not iterable".
+    if (!Array.isArray(result)) return result;
+    const [status, payload, extra] = result;
     return [status, payload, { ...headers, ...(extra ?? {}) }];
   };
 }

@@ -111,8 +111,18 @@ export async function start(requestedPort = Number(process.env.PORT ?? 3000), ma
   const apiRoutes = await loadApiRoutes();
 
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://127.0.0.1');
     try {
+      // Malformed request targets ("//%5c..", "/%E0%A4%A") are client errors:
+      // new URL and decodeURIComponent throw on them, and an escaped throw here
+      // is an unhandled rejection that kills the whole server. Validating the
+      // full pathname once also covers every segment matchRoute decodes.
+      let url;
+      try {
+        url = new URL(req.url, 'http://127.0.0.1');
+        decodeURIComponent(url.pathname);
+      } catch {
+        return sendJson(res, 400, { error: 'bad request path' });
+      }
       if (url.pathname === '/api/health') {
         return sendJson(res, 200, { status: 'ok', uptime: Math.round(process.uptime() * 1000) });
       }
@@ -156,7 +166,8 @@ export async function start(requestedPort = Number(process.env.PORT ?? 3000), ma
         const [status, payload, headers] = result;
         return sendJson(res, status, payload, headers);
       }
-      if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, url, res);
+      // await, not a bare return: a rejection must land in the catch below.
+      if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, url, res);
       return sendJson(res, 404, { error: 'not found' });
     } catch (err) {
       // Streaming handlers may have sent headers before throwing — sendJson
