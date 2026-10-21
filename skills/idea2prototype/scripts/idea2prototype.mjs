@@ -145,6 +145,7 @@ const FEATURES = {
     summary: (o) => [
       `routes/${o.resource}.mjs   GET/POST /api/${o.resource} + GET/PUT/DELETE /api/${o.resource}/:id`,
       `tests/${o.resource}.test.mjs  CRUD roundtrip + validation`,
+      'compose with auth-local: wrap handlers in requireAuth — and give the tests a session (SKILL.md "Composing features")',
     ],
   },
   'auth-local': {
@@ -262,6 +263,9 @@ async function cmdAdd(rest) {
 
   if (feature === 'api-crud') {
     const resource = opts.resource ?? die('--resource <name> is required (e.g. --resource todos)');
+    // lowercase-only is load-bearing: data/*.json and routes/*.mjs collide
+    // case-insensitively on macOS/Windows filesystems, so any casing of
+    // "Users" must die HERE — before the RESERVED_RESOURCES lookup below.
     if (!/^[a-z][a-z0-9-]*$/.test(resource)) {
       die(`invalid resource name "${resource}" — lowercase letters, digits, dashes`);
     }
