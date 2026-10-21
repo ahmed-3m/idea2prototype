@@ -1,0 +1,14 @@
+{
+  "name": "idea2prototype",
+  "displayName": "Idea2Prototype",
+  "version": "1.0.1",
+  "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
+  "author": {
+    "name": "Ahmed Mohammed",
+    "url": "https://github.com/ahmed-3m"
+  },
+  "homepage": "https://github.com/ahmed-3m/idea2prototype",
+  "repository": "https://github.com/ahmed-3m/idea2prototype",
+  "license": "MIT",
+  "keywords": ["prototype", "scaffold", "agent", "cli", "token-efficient"]
+}

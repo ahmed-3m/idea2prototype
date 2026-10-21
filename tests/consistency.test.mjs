@@ -1,7 +1,7 @@
-// Version-consistency guard: the engine version is duplicated across 8 in-repo
-// fields (engine const, package.json, plugin manifest, every template marker)
-// plus a CHANGELOG section AND the README status line — this test turns that
-// manual checklist into a failing test so drift can't ship.
+// Version-consistency guard: the engine version is duplicated across 10 in-repo
+// fields (engine const, package.json, three plugin manifests, every template
+// marker) plus a CHANGELOG section AND the README status line — this test turns
+// that manual checklist into a failing test so drift can't ship.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile, readdir } from 'node:fs/promises';
@@ -27,6 +27,10 @@ test('package.json, plugin manifest, and template markers match the engine versi
 
   const pluginJson = await readJson(join(ROOT, '.zcode-plugin/plugin.json'));
   assert.equal(pluginJson.version, VERSION, '.zcode-plugin/plugin.json .version drifted');
+
+  for (const manifest of ['.claude-plugin/plugin.json', '.cursor-plugin/plugin.json']) {
+    assert.equal((await readJson(join(ROOT, manifest))).version, VERSION, `${manifest} .version drifted`);
+  }
 
   const templatesDir = join(ROOT, 'skills/idea2prototype/templates');
   const templates = (await readdir(templatesDir, { withFileTypes: true }))

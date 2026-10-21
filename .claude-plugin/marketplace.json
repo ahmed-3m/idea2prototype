@@ -1,0 +1,13 @@
+{
+  "name": "ahmed-3m",
+  "owner": {
+    "name": "Ahmed Mohammed"
+  },
+  "plugins": [
+    {
+      "name": "idea2prototype",
+      "source": "./",
+      "description": "Turn ideas into tested prototypes with token-lean scaffolds and one-command verification."
+    }
+  ]
+}
