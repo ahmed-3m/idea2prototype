@@ -4,8 +4,7 @@
   "version": "1.0.1",
   "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
   "author": {
-    "name": "Ahmed Mohammed",
-    "url": "https://github.com/ahmed-3m"
+    "name": "Ahmed Mohammed"
   },
   "homepage": "https://github.com/ahmed-3m/idea2prototype",
   "repository": "https://github.com/ahmed-3m/idea2prototype",

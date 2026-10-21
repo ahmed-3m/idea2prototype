@@ -81,8 +81,8 @@ The engine itself is one Node file with zero dependencies — any agent that can
 | Agent | Install |
 |---|---|
 | Claude Code | `claude plugin marketplace add ahmed-3m/idea2prototype` → `claude plugin install idea2prototype@ahmed-3m` |
-| Any agent (Agent Skills standard) | `npx skills add ahmed-3m/idea2prototype` |
-| Cursor | via the Cursor marketplace (submitted for listing) or the universal skills command above |
+| Any agent (Agent Skills standard) | `npx skills add ahmed-3m/idea2prototype` (the `skills` CLI needs Node 22.20 or later) |
+| Cursor | via the Cursor marketplace (listing via marketplace PR) or the universal skills command above |
 | Cline | `cline skill install ahmed-3m/idea2prototype` (or via marketplace PR) |
 | ZCode | see the plugin note in [Quickstart](#quickstart) |
 
