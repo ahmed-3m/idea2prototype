@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const run = promisify(execFile);
 const HERE = fileURLToPath(new URL('.', import.meta.url));

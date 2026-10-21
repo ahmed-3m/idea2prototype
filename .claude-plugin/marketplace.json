@@ -7,6 +7,9 @@
     {
       "name": "idea2prototype",
       "source": "./",
+      "version": "1.0.1",
+      "displayName": "Idea2Prototype",
+      "category": "developer-tools",
       "description": "Turn ideas into tested prototypes with token-lean scaffolds and one-command verification."
     }
   ]

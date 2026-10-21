@@ -3,7 +3,7 @@
 // [status, payload] and the server sends them as JSON.
 import { createServer } from 'node:http';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = process.cwd();
@@ -174,7 +174,8 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
     let filePath = decodeURIComponent(url.pathname);
     if (filePath === '/' || filePath === '') filePath = '/index.html';
     const full = join(PUBLIC_DIR, filePath);
-    if (!full.startsWith(PUBLIC_DIR)) return sendJson(res, 400, { error: 'bad path' });
+    // sep-boundary: without it, a sibling directory like public-x/ would pass the prefix check
+    if (!full.startsWith(PUBLIC_DIR + sep)) return sendJson(res, 400, { error: 'bad path' });
     let fileStat;
     try {
       fileStat = await stat(full);

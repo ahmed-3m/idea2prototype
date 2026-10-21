@@ -15,7 +15,16 @@ Everything runs through one zero-dependency Node script (Node >= 18.17) bundled 
 node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ```
 
-`<skill-base>` is this skill's own directory (shown at the top of this skill when loaded). Commands:
+`<skill-base>` is this skill's own directory (shown at the top of this skill when loaded in ZCode).
+
+If `<skill-base>` is not substituted or the skill was installed via the Agent Skills standard (`npx skills add`), run via `npx` or the global CLI instead:
+
+```
+npx @ahmed-3m/idea2prototype <command>
+# or `i2p <command>` if globally installed
+```
+
+Commands:
 
 - `new <dir> --template web|api|cli|worker|library --name "..." --idea "..."` — scaffold a project
 - `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api). Names another feature owns are refused (`users`, `auth`, `jobs`, `uploads`, `events`, `ping`, …) — e.g. use `members`, not `users`, next to `auth-local`
