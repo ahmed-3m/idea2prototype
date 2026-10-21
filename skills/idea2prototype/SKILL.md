@@ -34,7 +34,7 @@ Commands:
 - `add cors` — Cross-Origin Resource Sharing: `cors({ origin, methods, credentials })` wraps any handler, answers OPTIONS preflights, stamps access-control-* headers, `GET /api/cors-ping` demo (web/api)
 - `add sse` — Server-Sent Events: `GET /api/events` stream (`text/event-stream`) — write chunks to `ctx.res` directly and return nothing; the server keeps the stream open and cleans up heartbeats on disconnect (web/api)
 - `add worker-jobs` — persistent background job queue inside web/api: `enqueue`/`list`/`registerHandler`, `data/jobs.json` persistence, 3 attempts with terminal `failed` state, demo `POST/GET /api/jobs` routes + tests (web/api)
-- `check [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects. Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
+- `check [dir] [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects, or pass `<dir>` to check a project from outside it (no cd needed). Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
 - `verify [dir] [--json]` — same verdict on ANY Node project (judge mode)
 - `map [dir] [--json]` — compact repo map (paths + LOC + exports); run it before opening files
 - `list` — show available templates/features
@@ -98,7 +98,7 @@ Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite
 ## Notes
 
 - Tests use the built-in `node:test`; no installs, no dependencies ever added by the tool.
-- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
+- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `check <dir>` accepts a project directory so it works from any cwd. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
 - If the user asks for dependencies (a framework, a database), ask once, then add via `npm install` and extend the tests accordingly.
 - Projects are plain Node — `npm start` (web/api), `node cli.mjs help` (cli), `import ... from './index.mjs'` (library); no other tooling assumed.
 - JSON stores (`data/*.json`) are single-writer: one server process per project dir — a second server's persist clobbers the first's acknowledged writes. A store that fails to parse on first read is quarantined (`data/<name>.json.corrupt-<ts>`, original bytes preserved) and the process starts empty with a loud stderr note — never a silent wipe.

@@ -20,6 +20,7 @@
   "files": [
     "bin/",
     "agents/",
+    "commands/",
     "skills/idea2prototype/SKILL.md",
     "skills/idea2prototype/scripts/",
     "skills/idea2prototype/templates/",

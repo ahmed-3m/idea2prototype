@@ -6,7 +6,7 @@
 //   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
 //   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
 //                                    | cors | sse | worker-jobs
-//   idea2prototype check [--json]    syntax + tests + boot, compact verdict
+//   idea2prototype check [dir] [--json]     syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
 //   idea2prototype list
@@ -302,9 +302,10 @@ async function cmdAdd(rest) {
 // ---------------------------------------------------------------------------
 async function cmdCheck(rest) {
   const opts = parseFlags(rest, [], ['json']);
-  checkPositionalCount(opts, 0, 'check takes no arguments — run it from inside the project');
-  await loadMarker(); // must run inside a idea2prototype project
-  return runChecks(process.cwd(), 'json' in opts, 'check');
+  checkPositionalCount(opts, 1, 'check takes one optional directory (check [dir])');
+  const target = resolveTargetDir(opts._[0]);
+  await loadMarker(target); // target must be a idea2prototype project
+  return runChecks(target, 'json' in opts, 'check');
 }
 
 // verify: run the same verdict on ANY Node project — used to judge projects
@@ -312,11 +313,7 @@ async function cmdCheck(rest) {
 async function cmdVerify(rest) {
   const opts = parseFlags(rest, [], ['json']);
   checkPositionalCount(opts, 1, 'verify takes one optional directory (verify [dir])');
-  const dir = opts._[0];
-  const target = resolve(process.cwd(), dir ?? '.');
-  if (!existsSync(target) || !statSync(target).isDirectory()) {
-    die(`no such directory: ${target}`);
-  }
+  const target = resolveTargetDir(opts._[0]);
   return runChecks(target, 'json' in opts, 'verify');
 }
 
@@ -700,10 +697,8 @@ async function cmdList(rest) {
 async function cmdMap(rest) {
   const opts = parseFlags(rest, [], ['json']);
   checkPositionalCount(opts, 1, 'map takes one optional directory (map [dir])');
-  const dir = opts._[0];
   const asJson = 'json' in opts;
-  const root = resolve(process.cwd(), dir ?? '.');
-  if (!existsSync(root) || !statSync(root).isDirectory()) die(`no such directory: ${root}`);
+  const root = resolveTargetDir(opts._[0]);
 
   const SKIP = new Set(['node_modules', '.git', 'data', 'uploads', 'dist', 'coverage']);
   const code = [];
@@ -755,7 +750,7 @@ function help() {
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
   SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs`);
-  SAY(`  idea2prototype check [--json]                   syntax + tests + boot, compact verdict`);
+  SAY(`  idea2prototype check [dir] [--json]            syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
   SAY(`  idea2prototype list                             available templates and features`);
@@ -800,10 +795,18 @@ function parseFlags(args, valueFlags, booleanFlags = []) {
 }
 
 // Positionals beyond what a command consumes die instead of being silently
-// ignored — `check ./proj` that quietly ignores ./proj is a silent wrong answer.
+// ignored — `verify a b` that quietly ignores b is a silent wrong answer.
 function checkPositionalCount(opts, max, what) {
   const extra = opts._[max];
   if (extra !== undefined) die(`unexpected argument "${extra}" — ${what}`);
+}
+
+// check/verify/map share one CLI contract: a single optional directory,
+// resolved against the cwd, dying with a readable message when it isn't one.
+function resolveTargetDir(dir) {
+  const target = resolve(process.cwd(), dir ?? '.');
+  if (!existsSync(target) || !statSync(target).isDirectory()) die(`no such directory: ${target}`);
+  return target;
 }
 
 // Canonical marker reader: null when absent or unparseable.
@@ -815,12 +818,12 @@ async function readMarker(projectDir) {
   }
 }
 
-async function loadMarker() {
-  const markerPath = join(process.cwd(), '.idea2prototype.json');
+async function loadMarker(projectDir = process.cwd()) {
+  const markerPath = join(projectDir, '.idea2prototype.json');
   if (!existsSync(markerPath)) {
-    die(`not a idea2prototype project (no .idea2prototype.json in ${process.cwd()}) — run: idea2prototype new <dir>`);
+    die(`not a idea2prototype project (no .idea2prototype.json in ${projectDir}) — run: idea2prototype new <dir>`);
   }
-  const marker = await readMarker(process.cwd());
+  const marker = await readMarker(projectDir);
   if (!marker) die('.idea2prototype.json is not valid JSON');
   return marker;
 }

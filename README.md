@@ -66,7 +66,7 @@ The syntax step covers server code (`node --check`) and every `.js` under `publi
 | `i2p add cors` | CORS wrapper: preflight answers + `access-control-*` headers, origin allowlists |
 | `i2p add sse` | Server-Sent Events stream: `GET /api/events`, `text/event-stream` + heartbeats |
 | `i2p add worker-jobs` | persistent background job queue: `enqueue`/`list`/`registerHandler`, `data/jobs.json`, 3 attempts |
-| `i2p check [--json]` | syntax + tests + boot, compact verdict (also `npm run check`) |
+| `i2p check [dir] [--json]` | syntax + tests + boot, compact verdict (also `npm run check` inside projects; pass `<dir>` to check from outside) |
 | `i2p verify [dir] [--json]` | same verdict on ANY Node project — judge mode |
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |
 

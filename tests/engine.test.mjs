@@ -918,12 +918,13 @@ test('unknown flags die with the allowed list instead of being ignored', async (
   );
 });
 
-// extra positionals are not silently ignored either: `check ./proj` that
-// quietly ignores ./proj and checks cwd is a silent wrong answer.
+// extra positionals are not silently ignored either: `verify a b` that
+// quietly ignores b and checks a is a silent wrong answer. (check/map/verify
+// accept ONE optional directory; a second positional still dies.)
 test('extra positional arguments die instead of being ignored', async (t) => {
   const dir = await scaffold(t, { template: 'cli' });
   for (const [args, msg] of [
-    [['check', 'somewhere'], /unexpected argument "somewhere" — check takes no arguments/],
+    [['check', 'a', 'b'], /unexpected argument "b" — check takes one optional directory/],
     [['verify', 'a', 'b'], /unexpected argument "b" — verify takes one optional directory/],
     [['map', 'a', 'b'], /unexpected argument "b" — map takes one optional directory/],
     [['list', 'x'], /unexpected argument "x" — list takes no arguments/],
@@ -1226,4 +1227,66 @@ test('test files run serially — a later test file sees an earlier one\'s store
   assert.match(stdout, /PASS \(3\/3 passed\)/);
   // web template (3) + generated CRUD (3) + seed + observe
   assert.match(stdout, /8 tests passed/);
+});
+
+// `i2p check my-app` from the parent dir is the first command a fresh agent
+// tries after `i2p new my-app` — it used to die with "check takes no arguments".
+test('check <dir> verifies a project from outside it (no cd required)', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web' });
+  const parent = join(projectDir, '..');
+  const outside = await i2p(['check', 'app'], { cwd: parent });
+  assert.match(outside.stdout, /PASS \(3\/3 passed\)/);
+  const inside = await i2p(['check'], { cwd: projectDir });
+  assert.match(inside.stdout, /PASS \(3\/3 passed\)/);
+  await assert.rejects(
+    i2p(['check', 'definitely-missing'], { cwd: parent }),
+    (err) => /no such directory/.test(err.stderr ?? ''),
+  );
+});
+
+// Two prototypes side by side: the second `npm start` must fall forward to
+// the next port (Vite-style), not crash with an unhandled EADDRINUSE stack.
+// An explicit PORT never hunts — it fails with a one-line readable error.
+test('server start() hunts past a busy port; explicit PORT fails with a clean message', async (t) => {
+  const previousPort = process.env.PORT;
+  delete process.env.PORT;
+  try {
+    for (const template of ['web', 'api']) {
+      const projectDir = await scaffold(t, { template });
+      const { start } = await import(pathToFileURL(join(projectDir, 'server.mjs')).href);
+
+      const first = await start(0); // OS-assigned port, held open on purpose
+      t.after(() => first.close());
+      const hunted = await start(first.port); // no explicit PORT -> falls forward
+      t.after(() => hunted.close());
+      assert.notEqual(hunted.port, first.port, `${template}: expected a port beyond busy ${first.port}`);
+      const health = await fetch(`http://127.0.0.1:${hunted.port}/api/health`);
+      assert.equal(health.status, 200);
+
+      process.env.PORT = String(first.port); // explicit PORT -> readable error, no raw stack
+      await assert.rejects(start(), /Port \d+ is already in use/);
+      delete process.env.PORT;
+    }
+  } finally {
+    if (previousPort === undefined) delete process.env.PORT;
+    else process.env.PORT = previousPort;
+  }
+});
+
+// The static guard must check the separator boundary: a sibling directory
+// sharing the `public` prefix (public-secret/) must stay unreachable. Raw
+// `../` is normalized away by every spec-compliant client, so the encoded
+// form (`..%2F`) is what actually reaches the server's path decode.
+test('web server rejects encoded ../ traversal into sibling prefix directories', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web' });
+  const siblingDir = join(projectDir, 'public-secret');
+  await mkdir(siblingDir, { recursive: true });
+  await writeFile(join(siblingDir, 'secret.txt'), 'leaked');
+
+  const { start } = await import(pathToFileURL(join(projectDir, 'server.mjs')).href);
+  const app = await start(0);
+  t.after(() => app.close());
+  const res = await fetch(`http://127.0.0.1:${app.port}/..%2Fpublic-secret%2Fsecret.txt`);
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'bad path');
 });
