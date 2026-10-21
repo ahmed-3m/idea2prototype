@@ -3,7 +3,7 @@
 // [status, payload] and the server sends them as JSON.
 import { createServer } from 'node:http';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = process.cwd();
@@ -107,7 +107,7 @@ function sendJson(res, status, payload, headers = {}) {
   res.end(data);
 }
 
-export async function start(port = Number(process.env.PORT ?? 3000)) {
+export async function start(requestedPort = Number(process.env.PORT ?? 3000), maxRetries = 10) {
   const apiRoutes = await loadApiRoutes();
 
   const server = createServer(async (req, res) => {
@@ -174,7 +174,8 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
     let filePath = decodeURIComponent(url.pathname);
     if (filePath === '/' || filePath === '') filePath = '/index.html';
     const full = join(PUBLIC_DIR, filePath);
-    if (!full.startsWith(PUBLIC_DIR)) return sendJson(res, 400, { error: 'bad path' });
+    // sep-boundary: without it, a sibling directory like public-x/ would pass the prefix check
+    if (!full.startsWith(PUBLIC_DIR + sep)) return sendJson(res, 400, { error: 'bad path' });
     let fileStat;
     try {
       fileStat = await stat(full);
@@ -187,7 +188,44 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
     res.end(req.method === 'HEAD' ? undefined : data);
   }
 
-  await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
+  // Listen with a one-shot error handler: a busy port emits 'error' on the
+  // server, and without a listener Node kills the process with a raw stack.
+  const tryListen = (p) =>
+    new Promise((resolveListen, rejectListen) => {
+      const onError = (err) => {
+        server.removeListener('listening', onListening);
+        rejectListen(err);
+      };
+      const onListening = () => {
+        server.removeListener('error', onError);
+        resolveListen();
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(p, '127.0.0.1');
+    });
+
+  // Port hunting: with no explicit PORT, a busy 3000 falls forward to 3001,
+  // 3002, ... (Vite-style) so two prototypes can run side by side. An
+  // explicit PORT and start(0) never hunt — they asked for that port (or
+  // the OS's choice).
+  const isExplicitPort = Boolean(process.env.PORT);
+  let port = requestedPort;
+  for (let attempts = 0; ; attempts++) {
+    try {
+      await tryListen(port);
+      break;
+    } catch (err) {
+      if (err?.code === 'EADDRINUSE' && !isExplicitPort && requestedPort !== 0 && attempts < maxRetries) {
+        port++;
+        continue;
+      }
+      if (err?.code === 'EADDRINUSE') {
+        throw new Error(`Port ${port} is already in use. Run with PORT=<number> npm start, or free port ${port}.`);
+      }
+      throw err;
+    }
+  }
   return {
     server,
     port: server.address().port,
@@ -200,6 +238,13 @@ export async function start(port = Number(process.env.PORT ?? 3000)) {
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
 if (isMain) {
-  const app = await start();
-  console.log(`Idea2Prototype app running at http://127.0.0.1:${app.port}`);
+  try {
+    const app = await start();
+    // Silent hunt by design: when the port fell forward, this URL line is
+    // the single signal of where the app actually landed.
+    console.log(`Idea2Prototype app running at http://127.0.0.1:${app.port}`);
+  } catch (err) {
+    console.error(String(err?.message ?? err));
+    process.exit(1);
+  }
 }

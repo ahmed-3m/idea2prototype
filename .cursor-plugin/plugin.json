@@ -9,5 +9,7 @@
   "homepage": "https://github.com/ahmed-3m/idea2prototype",
   "repository": "https://github.com/ahmed-3m/idea2prototype",
   "license": "MIT",
+  "skills": "./skills",
+  "commands": "./commands",
   "keywords": ["prototype", "scaffold", "agent", "cli", "token-efficient"]
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.2
+
+First-trial friction fixes (2026-10-21 external review):
+
+- Fix: the `web`/`api` server templates hunt past a busy port — with no explicit `PORT`, a taken 3000 falls forward to 3001, 3002, … (Vite-style, silent: the boot URL line names the port it landed on) instead of crashing with an unhandled `EADDRINUSE` stack. An explicit `PORT` never hunts: it fails with a one-line readable error. `start(0)` (dynamic OS port, what `check` boots with) is untouched.
+- Fix: `check` accepts an optional directory — `i2p check my-app` from the parent works instead of dying with "check takes no arguments"; `check` with no argument still checks the cwd. Mirrors the existing `verify [dir]`/`map [dir]` convention, including the `no such directory` guard.
+- Packaging: a root `plugin.json` (name/displayName/version/description/suggestedPrompts) so agent registries that scan the repository root (Google Antigravity, Gemini CLI) discover the plugin natively; pinned to the engine version by the consistency suite alongside the other manifests.
+- Packaging: `commands/` ships in the npm tarball (`files[]`) — global installs used to lose the `/proto-new` and `/proto-check` slash commands.
+- Also carried from a parallel working session: marketplace/manifest fields for Antigravity (`version`, `displayName`, `category`, `skills`, `commands` pointers), an `idea2prototype` bin alias, npx fallbacks in SKILL.md/`proto-new` when `<skill-base>` is unsubstituted, and a `sep`-boundary fix for static path traversal to sibling `public-*` directories in the web template (+ regression test).
+- Also from the parallel session: a Socratic-alignment step 0 in the workflow (2–3 scope questions before scaffolding when the idea is ambiguous, answers written straight into `PROTOTYPE.md`), the root `plugin.json` converged to the package description + review prompts, and port-hunting test hardening (retries-exhausted path; `npm start` on a busy explicit PORT exits 1 with the one-line message and no stack internals).
+- Tests: engine + consistency suite 73 → 79.
+
 ## 1.0.1
 
 Fixes for the critical + high findings of the 2026-10-20 repo review:

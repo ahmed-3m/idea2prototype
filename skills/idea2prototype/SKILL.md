@@ -15,7 +15,16 @@ Everything runs through one zero-dependency Node script (Node >= 18.17) bundled 
 node "<skill-base>/scripts/idea2prototype.mjs" <command>
 ```
 
-`<skill-base>` is this skill's own directory (shown at the top of this skill when loaded). Commands:
+`<skill-base>` is this skill's own directory (shown at the top of this skill when loaded in ZCode).
+
+If `<skill-base>` is not substituted or the skill was installed via the Agent Skills standard (`npx skills add`), run via `npx` or the global CLI instead:
+
+```
+npx @ahmed-3m/idea2prototype <command>
+# or `i2p <command>` if globally installed
+```
+
+Commands:
 
 - `new <dir> --template web|api|cli|worker|library --name "..." --idea "..."` — scaffold a project
 - `add api-crud --resource <name>` — add a JSON-file CRUD resource + tests (web/api). Names another feature owns are refused (`users`, `auth`, `jobs`, `uploads`, `events`, `ping`, …) — e.g. use `members`, not `users`, next to `auth-local`
@@ -25,13 +34,14 @@ node "<skill-base>/scripts/idea2prototype.mjs" <command>
 - `add cors` — Cross-Origin Resource Sharing: `cors({ origin, methods, credentials })` wraps any handler, answers OPTIONS preflights, stamps access-control-* headers, `GET /api/cors-ping` demo (web/api)
 - `add sse` — Server-Sent Events: `GET /api/events` stream (`text/event-stream`) — write chunks to `ctx.res` directly and return nothing; the server keeps the stream open and cleans up heartbeats on disconnect (web/api)
 - `add worker-jobs` — persistent background job queue inside web/api: `enqueue`/`list`/`registerHandler`, `data/jobs.json` persistence, 3 attempts with terminal `failed` state, demo `POST/GET /api/jobs` routes + tests (web/api)
-- `check [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects. Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
+- `check [dir] [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects, or pass `<dir>` to check a project from outside it (no cd needed). Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
 - `verify [dir] [--json]` — same verdict on ANY Node project (judge mode)
 - `map [dir] [--json]` — compact repo map (paths + LOC + exports); run it before opening files
 - `list` — show available templates/features
 
 ## Workflow (follow in order)
 
+0. **Socratic alignment (grill-me).** Before scaffolding, if the template choice or scope is ambiguous, ask the user 2–3 sharp questions — (1) template: `web`/`api`/`cli`/`worker`/`library`, (2) the 1–3 must-have core flows, (3) what is explicitly out of scope to keep the build token-lean — then write the answers straight into the generated `PROTOTYPE.md` and proceed without further delay. An unambiguous request skips the questions and goes straight to `new`.
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
 2. **Never hand-write what `add` can generate; hand-edits are yours to keep.** `server.mjs`, `package.json`, `.idea2prototype.json` belong to the tool — never recreate them. Files under `routes/` and `tests/` are generated once, then yours: edit them in place (the tool never overwrites them). Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
 3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`; abuse protection → `add rate-limit` (then wrap hot handlers with `rateLimit()`); live updates → `add sse`; background jobs → `add worker-jobs` (own handlers via `registerHandler`). The server auto-loads `routes/*.mjs`; handlers return `[status, payload]` — or write chunks to `ctx.res` directly and return nothing to stream (the `sse` demo shows the pattern).
@@ -89,7 +99,7 @@ Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite
 ## Notes
 
 - Tests use the built-in `node:test`; no installs, no dependencies ever added by the tool.
-- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
+- `check` exits non-zero on failure, prints at most 3 failure notes — fix those, re-run. A trailing `note` line about scaffold/engine version drift is informational, not a failure. `check --json` gives the same verdict machine-readable. `check <dir>` accepts a project directory so it works from any cwd. `verify [dir]` runs the same verdict on any Node project (benchmark/judge mode).
 - If the user asks for dependencies (a framework, a database), ask once, then add via `npm install` and extend the tests accordingly.
 - Projects are plain Node — `npm start` (web/api), `node cli.mjs help` (cli), `import ... from './index.mjs'` (library); no other tooling assumed.
 - JSON stores (`data/*.json`) are single-writer: one server process per project dir — a second server's persist clobbers the first's acknowledged writes. A store that fails to parse on first read is quarantined (`data/<name>.json.corrupt-<ts>`, original bytes preserved) and the process starts empty with a loud stderr note — never a silent wipe.

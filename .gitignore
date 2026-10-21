@@ -3,3 +3,6 @@ data/
 dist/
 coverage/
 *.log
+.agents/
+.zcode/
+.claude/worktrees/

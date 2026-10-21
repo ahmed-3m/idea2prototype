@@ -1,7 +1,7 @@
 {
   "name": "@ahmed-3m/idea2prototype",
   "version": "1.0.1",
-  "description": "Turn ideas into tested prototypes \u2014 token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
+  "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
   "type": "module",
   "license": "MIT",
   "author": "ahmed-3m",
@@ -14,11 +14,13 @@
     "url": "https://github.com/ahmed-3m/idea2prototype/issues"
   },
   "bin": {
-    "i2p": "bin/i2p.mjs"
+    "i2p": "bin/i2p.mjs",
+    "idea2prototype": "bin/i2p.mjs"
   },
   "files": [
     "bin/",
     "agents/",
+    "commands/",
     "skills/idea2prototype/SKILL.md",
     "skills/idea2prototype/scripts/",
     "skills/idea2prototype/templates/",
