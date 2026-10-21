@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="220" viewBox="0 0 1200 220" role="img" aria-labelledby="i2p-flow-title i2p-flow-desc">
+  <title id="i2p-flow-title">The Idea2Prototype loop: new, add, check, verify or map</title>
+  <desc id="i2p-flow-desc">Four stages connected by arrows: i2p new scaffolds a running tested project; i2p add drops in feature modules; i2p check returns a syntax-tests-boot verdict; i2p verify and i2p map judge any Node project and chart a repo in a few lines.</desc>
+
+  <rect width="1200" height="220" rx="26" fill="#0B0E14"/>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#66717D"/>
+    </marker>
+  </defs>
+
+  <g id="stages">
+    <!-- node 1 -->
+    <g>
+      <rect x="88" y="52" width="232" height="100" rx="14" fill="#0F141C" stroke="#222B37" stroke-width="1"/>
+      <text x="204" y="82" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#5C6875">01</text>
+      <text x="204" y="116" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="600" fill="#F2F6FA">i2p new</text>
+      <text x="204" y="144" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="18" fill="#8B98A5">running, tested scaffold</text>
+    </g>
+    <line x1="327" y1="102" x2="345" y2="102" stroke="#66717D" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- node 2 -->
+    <g>
+      <rect x="352" y="52" width="232" height="100" rx="14" fill="#0F141C" stroke="#222B37" stroke-width="1"/>
+      <text x="468" y="82" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#5C6875">02</text>
+      <text x="468" y="116" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="600" fill="#F2F6FA">i2p add</text>
+      <text x="468" y="144" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="18" fill="#8B98A5">drop-in feature modules</text>
+    </g>
+    <line x1="591" y1="102" x2="609" y2="102" stroke="#66717D" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- node 3 -->
+    <g>
+      <rect x="616" y="52" width="232" height="100" rx="14" fill="#0F141C" stroke="#222B37" stroke-width="1"/>
+      <text x="732" y="82" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#5C6875">03</text>
+      <text x="732" y="116" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="600" fill="#F2F6FA">i2p check</text>
+      <text x="732" y="144" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="18" fill="#8B98A5">syntax &#183; tests &#183; boot</text>
+    </g>
+    <line x1="855" y1="102" x2="873" y2="102" stroke="#66717D" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- node 4 -->
+    <g>
+      <rect x="880" y="52" width="232" height="100" rx="14" fill="#0F141C" stroke="#222B37" stroke-width="1"/>
+      <text x="996" y="82" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#5C6875">04</text>
+      <text x="996" y="116" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="600" fill="#F2F6FA">i2p verify &#183; map</text>
+      <text x="996" y="144" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="18" fill="#8B98A5">~60-token verdict</text>
+    </g>
+  </g>
+
+  <!-- concrete example grounding the abstraction (same example as the Quickstart) -->
+  <text x="600" y="192" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        font-size="18" fill="#5C6875">ex. "recipe box" &#8594; new &#8594; add auth + crud &#8594; check <tspan fill="#3FB950">PASS</tspan> (3/3)</text>
+</svg>
