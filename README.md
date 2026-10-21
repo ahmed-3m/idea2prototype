@@ -46,7 +46,7 @@ The whole point is the verdict. An agent building a prototype should **never gen
 ```
 $ npm run check
 
-Idea2Prototype check — PASS (3/3)
+Idea2Prototype check — PASS (3/3 passed)
   syntax  PASS  3 files parse clean (2 server + 1 frontend)
   tests   PASS  3 tests passed (1 files)
   boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms

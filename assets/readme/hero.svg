@@ -26,7 +26,7 @@
     <circle cx="730" cy="78" r="4.5" fill="#2B3542"/>
     <circle cx="748" cy="78" r="4.5" fill="#2B3542"/>
     <text x="772" y="84" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-          font-size="15" fill="#5C6875">bash &#8212; my-app</text>
+          font-size="15" fill="#7D8894">bash &#8212; my-app</text>
     <text x="1116" y="84" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
           font-size="15" fill="#D29922">&#8776; 60 tokens</text>
     <line x1="688" y1="100" x2="1136" y2="100" stroke="#1A212B" stroke-width="1"/>
