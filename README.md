@@ -1,25 +1,22 @@
-# Idea2Prototype
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="Idea2Prototype — turn ideas into tested prototypes, token-lean, for any coding agent. Terminal panel shows the whole check verdict: syntax PASS, tests PASS, boot PASS — about 60 tokens.">
+</p>
 
-[![CI](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node >= 18.17](https://img.shields.io/badge/node-%3E%3D18.17-green.svg)](https://nodejs.org/en/about/previous-releases)
+<p align="center">
+  <a href="https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml"><img src="https://github.com/ahmed-3m/idea2prototype/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@ahmed-3m/idea2prototype"><img src="https://img.shields.io/npm/v/@ahmed-3m/idea2prototype" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@ahmed-3m/idea2prototype"><img src="https://img.shields.io/npm/dt/@ahmed-3m/idea2prototype" alt="npm downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://nodejs.org/en/about/previous-releases"><img src="https://img.shields.io/badge/node-%3E%3D18.17-green.svg" alt="Node 18.17 or later"></a>
+  <a href="#design-rules"><img src="https://img.shields.io/badge/dependencies-0-3FB950.svg" alt="Zero dependencies"></a>
+</p>
 
-**Turn ideas into tested prototypes — token-lean, for any coding agent.** Zero-dependency scaffolds, feature modules with tests baked in, one-command verification, and a repo map for surgical context. Ships as an npm CLI (`i2p`) and a [ZCode](https://z.ai) plugin; works with any agent that can run a shell (Claude Code, Cline, OpenHands, Cursor, …).
-
-```
-$ npm run check
-
-Idea2Prototype check — PASS (3/3)
-  syntax  PASS  3 files parse clean (2 server + 1 frontend)
-  tests   PASS  3 tests passed (1 files)
-  boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
-```
+<p align="center"><strong>Turn ideas into tested prototypes — token-lean, for any coding agent.</strong><br>
+Zero-dependency scaffolds, feature modules with tests baked in, one-command verification, and a repo map for surgical context. Ships as an npm CLI (<code>i2p</code>) and a <a href="https://z.ai">ZCode</a> plugin; works with any agent that can run a shell (Claude Code, Cline, OpenHands, Cursor, …).</p>
 
 **Status:** v1.0.1 · actively maintained · 1.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
 > **Idea still fuzzy?** Start one stage earlier with [brainstorm2idea](https://github.com/ahmed-3m/brainstorm2idea) — a Socratic dialogue turns raw thought into a machine-linted `brief.md`, then hands off directly into `i2p new`.
-
-That verdict is the whole idea: an agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**. The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails).
 
 ## Why
 
@@ -37,6 +34,25 @@ Idea2Prototype moves all three to deterministic code: `new` scaffolds a running,
 | Feedback per edit | raw logs, 5–20k tokens | verdict, ~60 tokens |
 | "Does it actually boot?" | agent guesses / reads logs | boot probe, 1 line |
 | Learning the codebase | open everything | `map` (~15 lines) |
+
+## How it works
+
+<p align="center">
+  <img src="./assets/readme/workflow.svg" width="100%" alt="The Idea2Prototype loop: i2p new scaffolds a running, tested project; i2p add drops in feature modules; i2p check returns a syntax-tests-boot verdict; i2p verify and i2p map judge any Node project and chart a repo in a few lines.">
+</p>
+
+The whole point is the verdict. An agent building a prototype should **never generate boilerplate it didn't need to, and never read logs it didn't need to**:
+
+```
+$ npm run check
+
+Idea2Prototype check — PASS (3/3 passed)
+  syntax  PASS  3 files parse clean (2 server + 1 frontend)
+  tests   PASS  3 tests passed (1 files)
+  boot    PASS  GET /api/health -> 200, GET / -> 200 in 45ms
+```
+
+The syntax step covers server code (`node --check`) and every `.js` under `public/`, recursively (parsed as both ESM and classic script — only code broken in both modes fails). The tests step runs the scaffold's own `node:test` suite; the boot step starts the real server and probes it over HTTP.
 
 ## Commands
 
