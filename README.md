@@ -74,6 +74,18 @@ Templates: `web` (static frontend + health + auto-loading routes), `api` (JSON A
 
 **JSON stores are single-writer.** Every `data/*.json` store is an in-memory list persisted on write by ONE server process — run two servers on the same project dir and each will clobber the other's acknowledged writes on its next persist (last writer wins the whole file). A store that fails to parse on first read is never silently wiped: it is quarantined as `data/<name>.json.corrupt-<timestamp>` (the original bytes are preserved for recovery) and the process starts empty with a loud stderr note. `auth-local` sessions are stateless HMAC tokens — logout clears the browser cookie only; a copied token stays valid until it expires.
 
+## Install
+
+The engine itself is one Node file with zero dependencies — any agent that can run a shell can use it via `npx` (see [Quickstart](#quickstart)). For agent-native installs, plugin manifests live in [`.claude-plugin/`](.claude-plugin/) and [`.cursor-plugin/`](.cursor-plugin/), and the skill is at [`skills/idea2prototype/SKILL.md`](skills/idea2prototype/SKILL.md):
+
+| Agent | Install |
+|---|---|
+| Claude Code | `claude plugin marketplace add ahmed-3m/idea2prototype` → `claude plugin install idea2prototype@ahmed-3m` |
+| Any agent (Agent Skills standard) | `npx skills add ahmed-3m/idea2prototype` |
+| Cursor | via the Cursor marketplace (submitted for listing) or the universal skills command above |
+| Cline | `cline skill install ahmed-3m/idea2prototype` (or via marketplace PR) |
+| ZCode | see the plugin note in [Quickstart](#quickstart) |
+
 ## Quickstart
 
 **Any agent or plain shell — npx straight off npmjs, no clone needed:**
