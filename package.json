@@ -17,6 +17,10 @@
     "i2p": "bin/i2p.mjs",
     "idea2prototype": "bin/i2p.mjs"
   },
+  "scripts": {
+    "test": "node --test tests/engine.test.mjs tests/consistency.test.mjs",
+    "test:stress": "node --test tests/stress.test.mjs"
+  },
   "files": [
     "bin/",
     "agents/",
