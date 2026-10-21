@@ -2,8 +2,11 @@
   "name": "idea2prototype",
   "displayName": "Idea2Prototype",
   "version": "1.0.1",
-  "description": "Turn ideas into tested prototypes: zero-dependency scaffolds, one-command verified checks, and the workflow skill that ties them together.",
+  "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
   "suggestedPrompts": [
+    "Scaffold a verified web prototype for my idea",
+    "Add a REST CRUD resource to this project",
+    "Run verification check on this prototype",
     "Scaffold a new web prototype from an idea",
     "Add auth-local and api-crud resources to this prototype",
     "Run prototype verification check and report the verdict"

@@ -1266,6 +1266,48 @@ test('server start() hunts past a busy port; explicit PORT fails with a clean me
       process.env.PORT = String(first.port); // explicit PORT -> readable error, no raw stack
       await assert.rejects(start(), /Port \d+ is already in use/);
       delete process.env.PORT;
+
+      // retries exhausted (zero allowed here) takes the same friendly exit,
+      // naming the port that finally refused — not just the first busy one
+      await assert.rejects(start(first.port, 0), new RegExp(`Port ${first.port} is already in use`));
+    }
+  } finally {
+    if (previousPort === undefined) delete process.env.PORT;
+    else process.env.PORT = previousPort;
+  }
+});
+
+// The first-trial crash this branch kills, end to end: `npm start` with an
+// explicit busy PORT must exit non-zero with the one-line message only —
+// no unhandled EADDRINUSE stack, no EventEmitter internals on stderr.
+test('npm start on a busy explicit PORT exits cleanly with the one-line error', async (t) => {
+  const previousPort = process.env.PORT;
+  delete process.env.PORT;
+  try {
+    for (const template of ['web', 'api']) {
+      await t.test(template, async () => {
+        const projectDir = await scaffold(t, { template });
+        const { start } = await import(pathToFileURL(join(projectDir, 'server.mjs')).href);
+        const holder = await start(0); // holds a port busy for the child
+        t.after(() => holder.close());
+
+        const child = spawn(process.execPath, ['server.mjs'], {
+          cwd: projectDir,
+          env: { ...process.env, PORT: String(holder.port) },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let output = '';
+        child.stdout.on('data', (c) => { output += c; });
+        child.stderr.on('data', (c) => { output += c; });
+        const code = await new Promise((resolve) => {
+          const timer = setTimeout(() => { child.kill('SIGKILL'); resolve('timeout'); }, 15_000);
+          child.once('exit', (c) => { clearTimeout(timer); resolve(c); });
+        });
+        assert.notEqual(code, 'timeout', `server never exited; output: ${output}`);
+        assert.equal(code, 1, `expected exit code 1; output: ${output}`);
+        assert.match(output, new RegExp(`Port ${holder.port} is already in use`));
+        assert.doesNotMatch(output, /node:internal|EventEmitter|^\s+at /m);
+      });
     }
   } finally {
     if (previousPort === undefined) delete process.env.PORT;
