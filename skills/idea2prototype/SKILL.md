@@ -61,7 +61,7 @@ POST: requireAuth(async ({ body, user }) => {
 
 `requireAuth` rejects anonymous requests with 401 and provides `ctx.user` (`{ username }`) to the wrapped handler. `rateLimit(...)` from `add rate-limit` and `cors(...)` from `add cors` wrap handlers the same way — compose them by nesting.
 
-3. Fix the generated test: BOTH of its POSTs (`posts CRUD roundtrip` and `posts rejects non-object bodies`) go out anonymously and now get 401. Bootstrap a session once and pass the cookie on every protected call. Note the helper takes the SERVER ROOT — the test's existing `base` variable points at `/api/posts`, so build a separate origin string (register/login live at `/api/auth/*`):
+3. Fix the generated test: all four of its POSTs go out anonymously and now get 401 — the POST in `posts CRUD roundtrip`, both POSTs in `posts ignores client-sent id and createdAt`, and the POST in `posts rejects non-object bodies`. Bootstrap a session once and pass the cookie on every protected call. Note the helper takes the SERVER ROOT — the test's existing `base` variable points at `/api/posts`, so build a separate origin string (register/login live at `/api/auth/*`):
 
 ```js
 const JSON_HEADERS = { 'content-type': 'application/json' };
