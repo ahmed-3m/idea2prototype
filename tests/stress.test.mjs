@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT = fileURLToPath(new URL('../skills/idea2prototype/scripts/idea2prototype.mjs', import.meta.url));
 const DRIVER = fileURLToPath(new URL('./stress-driver.mjs', import.meta.url));
 const SEED = Number(process.env.I2P_STRESS_SEED ?? Math.floor(Math.random() * 2 ** 31));
+// A typo'd seed would silently become NaN, and every NaN run is the same run.
+if (!Number.isSafeInteger(SEED)) throw new Error(`I2P_STRESS_SEED must be an integer, got ${JSON.stringify(process.env.I2P_STRESS_SEED)}`);
 const SCALE = Math.max(0.25, Number(process.env.I2P_STRESS_SCALE ?? 1));
 const KEEP = process.env.I2P_STRESS_KEEP === '1';
 const n = (base) => Math.max(1, Math.round(base * SCALE));
@@ -74,10 +76,20 @@ function cli(args, { cwd, timeout = 180_000 } = {}) {
   });
 }
 
+// Servers still running when a test ends (an assertion threw before stop()).
+// Their pipes would keep this process alive forever, turning a red run into a
+// hang, so every test's cleanup kills them first (and before removing dirs a
+// server's cwd sits in).
+const liveServers = new Set();
+const killLiveServers = () => Promise.all([...liveServers].map((kill) => kill()));
+
 async function tempRoot(t, prefix = 'i2p-stress-') {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   if (KEEP) t.diagnostic(`kept: ${dir}`);
-  else t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  t.after(async () => {
+    await killLiveServers();
+    if (!KEEP) await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
   return dir;
 }
 
@@ -115,16 +127,30 @@ async function serve(projectDir) {
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += d; });
   let exited = null;
-  const exit = new Promise((resolve) => child.on('exit', (code, signal) => { exited = { code, signal }; resolve(exited); }));
+  const kill = async () => {
+    if (exited === null) child.kill();
+    await exit;
+  };
+  const exit = new Promise((resolve) => child.on('exit', (code, signal) => {
+    exited = { code, signal };
+    liveServers.delete(kill);
+    resolve(exited);
+  }));
+  liveServers.add(kill);
   const port = await new Promise((resolve, reject) => {
     let buf = '';
     let announced = false;
+    child.on('error', reject);
     child.stdout.on('data', (d) => {
       buf += d;
       const nl = buf.indexOf('\n');
       if (nl !== -1 && !announced) {
         announced = true;
-        resolve(JSON.parse(buf.slice(0, nl)).port);
+        try {
+          resolve(JSON.parse(buf.slice(0, nl)).port);
+        } catch {
+          reject(new Error(`driver's first line is not {"port":N}: ${buf.slice(0, nl)}`));
+        }
       }
     });
     exit.then(() => reject(new Error(`driver exited before listening: ${stderr}`)));
@@ -775,7 +801,8 @@ test('E7 template matrix: new -> check -> map -> verify from elsewhere agree for
     assert.equal(checked.status, 'PASS', `${template}: ${JSON.stringify(checked.steps)}`);
     const map = await cli(['map', '--json'], { cwd: projectDir });
     assert.doesNotThrow(() => JSON.parse(map.stdout), `${template}: map --json is not JSON`);
-    const { verdict } = await verifyJson(projectDir, tmpdir());
+    const { res, verdict } = await verifyJson(projectDir, tmpdir());
+    assert.ok(verdict, `${template}: verify --json is not JSON: ${res.stdout.slice(0, 200)}${res.stderr.slice(0, 200)}`);
     assert.deepEqual(
       verdict.steps.map((s) => `${s.name}:${s.status}`),
       checked.steps.map((s) => `${s.name}:${s.status}`),
