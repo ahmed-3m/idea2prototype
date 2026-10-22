@@ -1,11 +1,11 @@
 ---
 name: idea2prototype
-description: Build working prototypes from ideas with minimal tokens — zero-dependency scaffolds, CRUD features, and a compact verified check (syntax + tests + boot). Use when creating an MVP, demo, web app, API, CLI, or library prototype from an idea, or whenever asked to scaffold/start a new small project or verify one iteratively.
+description: Build working prototypes from ideas — zero-dependency scaffolds, CRUD features, and a four-line check (syntax + tests + boot). Use when creating an MVP, demo, web app, API, CLI, or library prototype from an idea, or whenever asked to scaffold/start a new small project or verify one iteratively.
 ---
 
-# Idea2Prototype — token-lean prototype workflow
+# Idea2Prototype — scaffold, then a four-line check
 
-Idea2Prototype turns an idea into a running, tested prototype while spending as few tokens as possible. The scaffolds and CRUD modules are generated deterministically by a script (zero LLM output), and `check` replaces raw logs with a ~10-line verdict.
+Idea2Prototype turns an idea into a running, tested prototype. The scaffolds and CRUD modules are generated deterministically by a script (zero LLM output), and `check` replaces raw logs with a four-line verdict.
 
 ## The tool
 
@@ -41,7 +41,7 @@ Commands:
 
 ## Workflow (follow in order)
 
-0. **Socratic alignment (grill-me).** Before scaffolding, if the template choice or scope is ambiguous, ask the user 2–3 sharp questions — (1) template: `web`/`api`/`cli`/`worker`/`library`, (2) the 1–3 must-have core flows, (3) what is explicitly out of scope to keep the build token-lean — then write the answers straight into the generated `PROTOTYPE.md` and proceed without further delay. An unambiguous request skips the questions and goes straight to `new`.
+0. **Socratic alignment (grill-me).** Before scaffolding, if the template choice or scope is ambiguous, ask the user 2–3 sharp questions — (1) template: `web`/`api`/`cli`/`worker`/`library`, (2) the 1–3 must-have core flows, (3) what is explicitly out of scope to keep the build small — then write the answers straight into the generated `PROTOTYPE.md` and proceed without further delay. An unambiguous request skips the questions and goes straight to `new`.
 1. **Spec first.** Run `new`, then fill the generated `PROTOTYPE.md`: Goal (max 3 bullets), 1–3 core flows, out-of-scope list. Do not start coding before the spec exists.
 2. **Never hand-write what `add` can generate; hand-edits are yours to keep.** `server.mjs`, `package.json`, `.idea2prototype.json` belong to the tool — never recreate them. Files under `routes/` and `tests/` are generated once, then yours: edit them in place (the tool never overwrites them). Edit business logic, not plumbing. A `web` project gets: static frontend + health endpoint + tests; `api`: JSON API + index manifest + tests; `cli`: arg-parsed command + tests; `worker`: persistent job queue + tests; `library`: importable module (`index.mjs`) + tests.
 3. **Add capabilities with `add`, not from scratch.** Persistence → `add api-crud --resource todos`; accounts → `add auth-local` (then guard routes with `requireAuth`); files → `add upload`; abuse protection → `add rate-limit` (then wrap hot handlers with `rateLimit()`); live updates → `add sse`; background jobs → `add worker-jobs` (own handlers via `registerHandler`). The server auto-loads `routes/*.mjs`; handlers return `[status, payload]` — or write chunks to `ctx.res` directly and return nothing to stream (the `sse` demo shows the pattern).
@@ -90,11 +90,11 @@ async function session(root) {
 
 Then `check` — the anon-401/authed-201 contract and the rest of the CRUD suite must all pass.
 
-## Token discipline (why this exists)
+## Why the verdict stays short
 
-- Scaffolding ~15 files by hand costs ~10–30k output tokens; `new` costs ~0.
-- Raw build/test logs run 5–20k tokens per iteration; the verdict is ~60.
-- Rules that keep savings real: never cat log files, never regenerate files the tool owns, keep edits diff-sized, read only the files you're changing.
+- A fresh `web` scaffold is 10 files. `new` writes them without an LLM. Token totals for a from-scratch alternative were not measured.
+- `check` prints four lines: syntax, tests, and boot. Read that verdict. Do not read the raw log.
+- Never regenerate files the tool owns, keep edits diff-sized, and read only the files you are changing. `map` lists them.
 
 ## Notes
 

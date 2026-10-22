@@ -6,7 +6,7 @@ argument-hint: <idea in one sentence>
 Turn the idea "$ARGUMENTS" into a running, tested prototype using the idea2prototype skill.
 
 0. Load the idea2prototype skill first — it documents the workflow and provides the bundled script path (`<skill-base>/scripts/idea2prototype.mjs`) used below. If `<skill-base>` is not substituted or the skill was installed via the universal Agent Skills standard, use `npx @ahmed-3m/idea2prototype` (or `i2p` if globally installed).
-1. Grill first (Step 0 — Socratic Alignment): if the template or scope is ambiguous, ask the user 2–3 sharp questions before scaffolding — (1) template: web / api / cli / worker / library, (2) the 1–3 must-have core flows, (3) what is explicitly out of scope to keep the build token-lean. An unambiguous idea skips the questions.
+1. Grill first (Step 0 — Socratic Alignment): if the template or scope is ambiguous, ask the user 2–3 sharp questions before scaffolding — (1) template: web / api / cli / worker / library, (2) the 1–3 must-have core flows, (3) what is explicitly out of scope to keep the build small. An unambiguous idea skips the questions.
 2. Pick the template: a UI demo or full web app → `web`; a service/API → `api`; a terminal tool → `cli`; background jobs → `worker`; a reusable module/util → `library` (default: `web`, or the grilled answer).
 3. Derive a short slug directory name from the idea.
 4. Scaffold: `node <skill-base>/scripts/idea2prototype.mjs new <slug> --template <t> --name "<Name>" --idea "$ARGUMENTS"` (or `npx @ahmed-3m/idea2prototype new <slug> --template <t> --name "<Name>" --idea "$ARGUMENTS"`).
