@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink, utimes, chmod } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -1479,6 +1479,8 @@ for (const template of ['web', 'api']) {
       assert.match((await rejected.json()).error, /nested too deeply/);
       assert.equal((await fetch(base)).status, 200, 'the resource must still list');
       assert.equal((await post(JSON.stringify({ title: 'x', nested: { ok: [1, { two: 2 }] } }))).status, 201);
+      // brackets inside strings (escaped quotes too) are text, not nesting
+      assert.equal((await post(JSON.stringify({ title: `\\"${'[{'.repeat(300)}` }))).status, 201);
     } finally {
       await stop();
     }
@@ -1623,6 +1625,41 @@ test('a lock far older than any run is taken over even if its pid looks alive', 
   assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
 });
 
+// Review of H7 (CodeRabbit): when the lock cannot be created at all, add used
+// to run UNLOCKED and could lose marker updates. add now refuses; check/verify
+// only judge, so they warn and still deliver a verdict.
+test('an uncreatable lock makes add refuse and check warn but still judge', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const before = await readFile(join(projectDir, '.idea2prototype.json'), 'utf8');
+  const missing = join(projectDir, 'no-such-tmp');
+  const env = { ...process.env, TMPDIR: missing, TEMP: missing, TMP: missing };
+  await assert.rejects(i2p(['add', 'cors'], { cwd: projectDir, env }), (err) => {
+    assert.match(err.stderr, /cannot create the project lock .*refusing to modify the project unlocked/);
+    return true;
+  });
+  assert.equal(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'), before);
+  const { stdout, stderr } = await i2p(['check'], { cwd: projectDir, env });
+  assert.match(stderr, /cannot create the project lock .*running without it/);
+  assert.match(stdout, /PASS/);
+});
+
+// Review of H7 (CodeRabbit): two waiters that judged the same dead lock stale
+// could each delete it — the second deleting the first's fresh lock — and run
+// side by side. Takeover is serialized; a crowd of adds after a crash must
+// still record every feature.
+test('concurrent adds after a crashed holder all take turns and are all recorded', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+  await writeFile(lockPath, '2147483646'); // crashed holder: no such process
+  const adds = [['api-crud', '--resource', 'items'], ['api-crud', '--resource', 'notes'], ['auth-local'], ['upload'], ['rate-limit'], ['cors'], ['sse'], ['worker-jobs']];
+  await Promise.all(adds.map((args) => i2p(['add', ...args], { cwd: projectDir, timeout: 60_000 })));
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.equal(marker.features.length, adds.length);
+});
+
 // Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
 // was killed with ENOBUFS and judged "? failed of ?".
 test('verify passes a passing suite that logs 20 MiB', async (t) => {
@@ -1670,4 +1707,22 @@ test('map skips a dangling .js symlink instead of dying', async (t) => {
   const map = JSON.parse(stdout);
   assert.deepEqual(map.files.map((f) => f.path), ['index.mjs']);
   assert.deepEqual(map.unreadable, ['dangling.js']);
+});
+
+// Review of H14 (CodeRabbit): an unreadable ROOT was swallowed (its prefix is
+// empty), so map reported "0 code files" with no hint why.
+test('map reports an unreadable root instead of an empty success', async (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) {
+    t.skip('needs POSIX permissions and a non-root user');
+    return;
+  }
+  const dir = await foreignProject(t, { 'index.mjs': 'export const ok = 1;\n' });
+  await chmod(dir, 0o000);
+  let map;
+  try {
+    map = JSON.parse((await i2p(['map', dir, '--json'])).stdout);
+  } finally {
+    await chmod(dir, 0o755); // before the after-hook rm, which needs to list it
+  }
+  assert.deepEqual(map.unreadable, ['.']);
 });
