@@ -87,16 +87,21 @@ function readRawBody(req, limit = 10e6) {
 // JSON.parse accepts nesting that JSON.stringify cannot write back (it
 // recurses): a route that stores a 20k-deep body answers 500 "Maximum call
 // stack size exceeded" on every later response that serializes it. Real
-// payloads are a few levels deep — cap where bodies enter. Iterative, so the
-// check itself cannot overflow.
+// payloads are a few levels deep — cap where bodies enter. Scans the raw text
+// BEFORE parsing: linear, constant memory, nothing allocated for a hostile body.
 const MAX_JSON_DEPTH = 100;
-function tooDeep(value) {
-  const stack = [[value, 1]];
-  while (stack.length) {
-    const [node, depth] = stack.pop();
-    if (node === null || typeof node !== 'object') continue;
-    if (depth > MAX_JSON_DEPTH) return true;
-    for (const child of Object.values(node)) stack.push([child, depth + 1]);
+function jsonTooDeep(text) {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === '\\') i++; // skip the escaped character
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === '{' || c === '[') {
+      if (++depth > MAX_JSON_DEPTH) return true;
+    } else if (c === '}' || c === ']') depth--;
   }
   return false;
 }
@@ -162,12 +167,13 @@ export async function start(requestedPort = Number(process.env.PORT ?? 3000), ma
           if ((req.headers['content-type'] ?? '').includes('multipart/form-data')) {
             ctx.rawBody = raw;
           } else if (raw.length) {
+            const text = raw.toString('utf8');
+            if (jsonTooDeep(text)) return sendJson(res, 400, { error: `JSON body nested too deeply (max ${MAX_JSON_DEPTH} levels)` });
             try {
-              ctx.body = JSON.parse(raw.toString('utf8'));
+              ctx.body = JSON.parse(text);
             } catch {
               return sendJson(res, 400, { error: 'invalid JSON body' });
             }
-            if (tooDeep(ctx.body)) return sendJson(res, 400, { error: `JSON body nested too deeply (max ${MAX_JSON_DEPTH} levels)` });
           }
         }
         const result = await handler(ctx);

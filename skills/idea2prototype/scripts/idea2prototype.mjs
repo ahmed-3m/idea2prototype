@@ -259,7 +259,7 @@ async function cmdAdd(rest) {
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
   const def = FEATURES[feature];
   if (!def) die(`unknown feature "${feature}" — available: ${available}`);
-  return withProjectLock(process.cwd(), 60_000, () => addFeature(feature, def, opts));
+  return withProjectLock(process.cwd(), 60_000, () => addFeature(feature, def, opts), { required: true });
 }
 
 async function addFeature(feature, def, opts) {
@@ -746,7 +746,7 @@ async function cmdMap(rest) {
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {
-      if (prefix) unreadable.push(prefix);
+      unreadable.push(prefix || '.');
       return;
     }
     for (const entry of entries) {
@@ -888,7 +888,10 @@ async function loadMarker(projectDir = process.cwd()) {
 // The lock lives in the OS temp dir, keyed by project path, so `verify`
 // never writes into a project it is only judging. A holder that died is
 // detected by pid and its lock taken over.
-async function withProjectLock(projectDir, waitMs, fn) {
+// `required`: commands that read-modify-write the project (add) refuse to run
+// unlocked; read-only verdicts (check/verify) warn and run anyway, so a
+// sandbox with an unwritable temp dir still gets a verdict.
+async function withProjectLock(projectDir, waitMs, fn, { required = false } = {}) {
   // realpath: one project reached via a symlink, /private/var vs /var, or a
   // different drive-letter case must still map to ONE lock.
   let real = projectDir;
@@ -912,7 +915,12 @@ async function withProjectLock(projectDir, waitMs, fn) {
         await new Promise((r) => setTimeout(r, 20));
         continue;
       }
-      if (err?.code !== 'EEXIST') return fn(); // temp dir unusable: run unlocked rather than not at all
+      if (err?.code !== 'EEXIST') {
+        const why = `cannot create the project lock ${lockPath} (${err?.code ?? err})`;
+        if (required) die(`${why} — refusing to modify the project unlocked`);
+        FAIL(`idea2prototype: ${why} — running without it`);
+        return fn();
+      }
     }
     const seen = await readFile(lockPath, 'utf8').catch(() => '');
     const holder = Number(seen);
@@ -921,9 +929,26 @@ async function withProjectLock(projectDir, waitMs, fn) {
     // Past LOCK_MAX_AGE_MS any lock is stale: a recycled pid can look alive.
     const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
     if (stale) {
-      // Remove only the lock judged stale: another waiter may have taken it
-      // over since the read, and deleting ITS fresh lock would let two run.
-      if ((await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
+      // Takeover is serialized by an exclusive claim: without it, two waiters
+      // that both judged the same lock stale could each delete it — the second
+      // deleting the FIRST one's fresh lock — and both would run. Under the
+      // claim, the re-read sees any lock another waiter already replaced.
+      const claim = `${lockPath}.takeover`;
+      try {
+        await writeFile(claim, String(process.pid), { flag: 'wx' });
+      } catch {
+        // Someone else is taking over. A claim older than any takeover means
+        // its owner died mid-takeover.
+        const claimAge = Date.now() - ((await stat(claim).catch(() => null))?.mtimeMs ?? Date.now());
+        if (claimAge > 10_000) await rm(claim, { force: true });
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      try {
+        if ((await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
+      } finally {
+        await rm(claim, { force: true });
+      }
       continue;
     }
     if (Date.now() > deadline) {
