@@ -32,6 +32,8 @@ npm start
 
 The process stays in the foreground, and the template prints the URL it bound.
 
+A complete walkthrough — every install path and the first-prototype flow — lives in [docs/how-to-use.md](docs/how-to-use.md).
+
 ## Why
 
 The alternative is letting the agent write the scaffold.
