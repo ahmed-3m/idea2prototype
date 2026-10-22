@@ -37,4 +37,4 @@ I2P_STRESS_KEEP=1 node --test tests/stress.test.mjs    # keep the temp projects 
 
 Every failure message ends with `[replay: I2P_STRESS_SEED=<n>]` — rerun with that seed to get the same inputs. A stress failure that turns out to be a real bug gets a focused regression test in `tests/engine.test.mjs`, not just a green stress rerun.
 
-CI runs the engine and consistency suites on ubuntu/windows/macos across Node 18/22/24, and the stress suite as a separate job on ubuntu/windows with Node 22 only (seed 1337 on pushes and PRs, plus a weekly run with a fresh seed). See `AGENTS.md` for architecture context — it's written for coding agents and humans alike.
+CI runs the engine and consistency suites on Ubuntu, Windows and macOS across Node 18/22/24, and the stress suite as a separate job on Ubuntu and Windows with Node 22 only (seed 1337 on pushes and PRs, plus a weekly run with a fresh seed). See `AGENTS.md` for architecture context — it's written for coding agents and humans alike.
