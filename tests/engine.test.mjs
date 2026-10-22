@@ -1462,6 +1462,29 @@ for (const template of ['web', 'api']) {
   });
 }
 
+// Stress H17 (seed 4242): JSON.parse accepts nesting that JSON.stringify
+// cannot write back (it recurses), so ONE anonymous POST of a 20k-deep body
+// was stored by api-crud and every later GET/POST of the resource answered
+// 500 "Maximum call stack size exceeded" until a restart.
+for (const template of ['web', 'api']) {
+  test(`${template} server rejects absurdly nested JSON before a route can store it`, async (t) => {
+    const projectDir = await scaffold(t, { template, feature: 'api-crud', resource: 'items' });
+    const { port, stop } = await bootServer(t, projectDir); // routes load from the project cwd
+    try {
+      const base = `http://127.0.0.1:${port}/api/items`;
+      const post = (body) => fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+      const deep = `${'{"a":'.repeat(20_000)}1${'}'.repeat(20_000)}`;
+      const rejected = await post(deep);
+      assert.equal(rejected.status, 400);
+      assert.match((await rejected.json()).error, /nested too deeply/);
+      assert.equal((await fetch(base)).status, 200, 'the resource must still list');
+      assert.equal((await post(JSON.stringify({ title: 'x', nested: { ok: [1, { two: 2 }] } }))).status, 201);
+    } finally {
+      await stop();
+    }
+  });
+}
+
 // Stress H8: the rate-limit and cors wrappers destructured the handler
 // result, so a streaming handler (returns nothing) or a contract bug threw
 // "is not iterable" instead of reaching the server's own guard.
