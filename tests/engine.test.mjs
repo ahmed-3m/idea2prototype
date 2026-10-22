@@ -1739,7 +1739,7 @@ test('verify runs a root-level dash-led test file as a file, not a flag', async 
   const dir = await foreignProject(t, { '--x-test.mjs': PASSING_TEST });
   const verdict = await verifyJson(dir);
   assert.equal(verdict.status, 'PASS', JSON.stringify(verdict.steps));
-  assert.match(verdict.steps[1].detail, /1 tests passed \(1 files\)/);
+  assert.match(verdict.steps[1].detail, /1 tests passed \(1 file\)/);
 });
 
 // Stress H14: map read every *.js entry with no error handling — a dangling

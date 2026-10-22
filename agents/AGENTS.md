@@ -8,7 +8,7 @@ If starting from a fuzzy or unformed idea, load the `brainstorm2idea` skill and 
 
 ## Commands
 
-- `npx @ahmed-3m/idea2prototype new <dir> --template web|api|cli|worker|library` — scaffold a running, tested project (~0 tokens vs 10–30k hand-written)
+- `npx @ahmed-3m/idea2prototype new <dir> --template web|api|cli|worker|library` — scaffold a running, tested project (zero dependencies)
 - `npx @ahmed-3m/idea2prototype add api-crud --resource <name>` — JSON-file CRUD resource + roundtrip tests
 - `npx @ahmed-3m/idea2prototype add auth-local` — register/login/logout/me (scrypt + signed cookies) + tests; `requireAuth` protects other routes
 - `npx @ahmed-3m/idea2prototype add upload` — multipart file uploads + fetch-back + tests
@@ -16,7 +16,7 @@ If starting from a fuzzy or unformed idea, load the `brainstorm2idea` skill and 
 - `npx @ahmed-3m/idea2prototype add cors` — CORS wrapper (preflight + access-control-* headers, origin allowlists); `cors()` wraps any handler
 - `npx @ahmed-3m/idea2prototype add sse` — Server-Sent Events stream (`GET /api/events`) + heartbeats
 - `npx @ahmed-3m/idea2prototype add worker-jobs` — persistent background job queue (`data/jobs.json`, 3 attempts) with demo routes
-- `npm run check` (inside a project) — syntax + tests + boot, ~10-line verdict
+- `npm run check` (inside a project) — syntax + tests + boot, four-line verdict
 - `npx @ahmed-3m/idea2prototype map` — paths + LOC + exports; read this before opening files
 
 ## Workflow

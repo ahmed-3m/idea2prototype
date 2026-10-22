@@ -26,6 +26,7 @@ First-trial friction fixes (2026-10-21 external review):
 - Also carried from a parallel working session: marketplace/manifest fields for Antigravity (`version`, `displayName`, `category`, `skills`, `commands` pointers), an `idea2prototype` bin alias, npx fallbacks in SKILL.md/`proto-new` when `<skill-base>` is unsubstituted, and a `sep`-boundary fix for static path traversal to sibling `public-*` directories in the web template (+ regression test).
 - Also from the parallel session: a Socratic-alignment step 0 in the workflow (2–3 scope questions before scaffolding when the idea is ambiguous, answers written straight into `PROTOTYPE.md`), the root `plugin.json` converged to the package description + review prompts, and port-hunting test hardening (retries-exhausted path; `npm start` on a busy explicit PORT exits 1 with the one-line message and no stack internals).
 - Tests: engine + consistency suite 73 → 79.
+- Fix: the tests line of a check verdict says `1 file` when a single test file ran.
 
 ## 1.0.1
 

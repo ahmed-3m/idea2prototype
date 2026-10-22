@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// idea2prototype — token-lean prototype scaffolds + one-command verification for coding agents.
+// idea2prototype — zero-dependency prototype scaffolds + one-command verification for coding agents.
 // Zero dependencies. Requires Node >= 18.17 (built-in test runner with TAP reporter).
 //
 // Commands:
@@ -563,7 +563,8 @@ async function stepTests(projectDir, syntaxPassed) {
 
   if (res.status === 0 && !counts.fail && !counts.cancelled) {
     const ran = counts.tests ?? testFiles.length;
-    return { name: 'tests', status: 'pass', detail: `${ran} tests passed (${testFiles.length} files)` };
+    const fileWord = testFiles.length === 1 ? 'file' : 'files';
+    return { name: 'tests', status: 'pass', detail: `${ran} tests passed (${testFiles.length} ${fileWord})` };
   }
   const notes = [...out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]).slice(0, 3);
   const runnerError = /^# (Error:.*)$/m.exec(out)?.[1];
@@ -798,7 +799,7 @@ function findExports(text) {
 }
 
 function help() {
-  SAY(`idea2prototype ${VERSION} — token-lean prototype scaffolds + verification`);
+  SAY(`idea2prototype ${VERSION} — zero-dependency prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
   SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs`);

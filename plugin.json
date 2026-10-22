@@ -2,7 +2,7 @@
   "name": "idea2prototype",
   "displayName": "Idea2Prototype",
   "version": "1.0.1",
-  "description": "Turn ideas into tested prototypes — token-lean scaffolds + one-command verification for any coding agent. Zero dependencies.",
+  "description": "Turn ideas into tested prototypes — zero-dependency scaffolds and a four-line syntax, tests, and boot check for any coding agent.",
   "suggestedPrompts": [
     "Scaffold a verified web prototype for my idea",
     "Add a REST CRUD resource to this project",
