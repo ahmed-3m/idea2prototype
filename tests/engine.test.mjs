@@ -1660,6 +1660,27 @@ test('concurrent adds after a crashed holder all take turns and are all recorded
   assert.equal(marker.features.length, adds.length);
 });
 
+// Stress F2 on Windows CI (seed 1337): a holder released the lock between a
+// waiter's failed create and its read. The failed read/stat passed for an
+// empty, ancient lock, so the takeover deleted the NEXT holder's just-created
+// (still empty) lock, two adds ran at once, and the marker was torn. The
+// preload widens both windows (see the fixture) to make the race reproducible:
+// before the fix, about 1 round in 7 lost a feature (30 rounds: <1% miss).
+test('lock takeover never deletes a just-created holder under widened race windows', { timeout: 600_000 }, async (t) => {
+  if (!process.allowedNodeEnvironmentFlags.has('--import')) {
+    t.skip('needs node --import (Node >= 18.18)');
+    return;
+  }
+  const preload = pathToFileURL(join(HERE, 'fixtures', 'lock-race-preload.mjs')).href;
+  const resources = Array.from({ length: 8 }, (_, i) => `res${i}`);
+  for (let round = 0; round < 30; round++) {
+    const projectDir = await scaffold(t, {});
+    await Promise.all(resources.map((r) => run(process.execPath, ['--import', preload, SCRIPT, 'add', 'api-crud', '--resource', r], { cwd: projectDir, timeout: 120_000 })));
+    const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+    assert.deepEqual(marker.features.map((f) => f.resource).sort(), [...resources].sort(), `round ${round}: a concurrent add was lost`);
+  }
+});
+
 // Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
 // was killed with ENOBUFS and judged "? failed of ?".
 test('verify passes a passing suite that logs 20 MiB', async (t) => {
