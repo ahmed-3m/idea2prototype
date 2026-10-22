@@ -73,6 +73,28 @@ function readRawBody(req, limit = 10e6) {
   });
 }
 
+// JSON.parse accepts nesting that JSON.stringify cannot write back (it
+// recurses): a route that stores a 20k-deep body answers 500 "Maximum call
+// stack size exceeded" on every later response that serializes it. Real
+// payloads are a few levels deep — cap where bodies enter. Scans the raw text
+// BEFORE parsing: linear, constant memory, nothing allocated for a hostile body.
+const MAX_JSON_DEPTH = 100;
+function jsonTooDeep(text) {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === '\\') i++; // skip the escaped character
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === '{' || c === '[') {
+      if (++depth > MAX_JSON_DEPTH) return true;
+    } else if (c === '}' || c === ']') depth--;
+  }
+  return false;
+}
+
 function sendJson(res, status, payload, headers = {}) {
   // Handlers are user code — a bogus status must degrade to a clean 500, not
   // throw inside writeHead and leak Node internals ("Invalid status code: b").
@@ -100,8 +122,18 @@ export async function start(requestedPort = Number(process.env.PORT ?? 3000), ma
   const apiRoutes = await loadApiRoutes();
 
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://127.0.0.1');
     try {
+      // Malformed request targets ("//%5c..", "/%E0%A4%A") are client errors:
+      // new URL and decodeURIComponent throw on them, and an escaped throw here
+      // is an unhandled rejection that kills the whole server. Validating the
+      // full pathname once also covers every segment matchRoute decodes.
+      let url;
+      try {
+        url = new URL(req.url, 'http://127.0.0.1');
+        decodeURIComponent(url.pathname);
+      } catch {
+        return sendJson(res, 400, { error: 'bad request path' });
+      }
       if (url.pathname === '/api/health') {
         return sendJson(res, 200, { status: 'ok', uptime: Math.round(process.uptime() * 1000) });
       }
@@ -124,8 +156,10 @@ export async function start(requestedPort = Number(process.env.PORT ?? 3000), ma
           if ((req.headers['content-type'] ?? '').includes('multipart/form-data')) {
             ctx.rawBody = raw;
           } else if (raw.length) {
+            const text = raw.toString('utf8');
+            if (jsonTooDeep(text)) return sendJson(res, 400, { error: `JSON body nested too deeply (max ${MAX_JSON_DEPTH} levels)` });
             try {
-              ctx.body = JSON.parse(raw.toString('utf8'));
+              ctx.body = JSON.parse(text);
             } catch {
               return sendJson(res, 400, { error: 'invalid JSON body' });
             }

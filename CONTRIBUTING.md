@@ -24,4 +24,17 @@ node --test tests/consistency.test.mjs   # version sync across engine/package/pl
 node --check skills/idea2prototype/scripts/idea2prototype.mjs
 ```
 
-CI runs the same suite on ubuntu/windows across Node 18/22/24. See `AGENTS.md` for architecture context — it's written for coding agents and humans alike.
+## Stress suite
+
+`tests/stress.test.mjs` hammers the engine and the generated servers with concurrency, request bursts, fuzzed argv/HTTP input, and pathological repos. It is slower (a few minutes) and runs as its own CI job, so run it when you touch the engine, a server template, or a store-writing feature:
+
+```bash
+npm run test:stress                                    # random seed, printed at the top
+I2P_STRESS_SEED=1337 node --test tests/stress.test.mjs # replay an exact run
+I2P_STRESS_SCALE=3 node --test tests/stress.test.mjs   # 3x the iterations
+I2P_STRESS_KEEP=1 node --test tests/stress.test.mjs    # keep the temp projects for inspection
+```
+
+Every failure message ends with `[replay: I2P_STRESS_SEED=<n>]` — rerun with that seed to get the same inputs. A stress failure that turns out to be a real bug gets a focused regression test in `tests/engine.test.mjs`, not just a green stress rerun.
+
+CI runs the engine and consistency suites on Ubuntu, Windows and macOS across Node 18/22/24, and the stress suite as a separate job on Ubuntu and Windows with Node 22 only (seed 1337 on pushes and PRs, plus a weekly run with a fresh seed). See `AGENTS.md` for architecture context — it's written for coding agents and humans alike.

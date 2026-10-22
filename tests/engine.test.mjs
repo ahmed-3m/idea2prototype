@@ -4,7 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink, utimes, chmod } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { request } from 'node:http';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1331,4 +1334,444 @@ test('web server rejects encoded ../ traversal into sibling prefix directories',
   const res = await fetch(`http://127.0.0.1:${app.port}/..%2Fpublic-secret%2Fsecret.txt`);
   assert.equal(res.status, 400);
   assert.equal((await res.json()).error, 'bad path');
+});
+
+// ---------------------------------------------------------------------------
+// Regressions for the stress-suite findings (tests/stress.test.mjs). Each one
+// pins a defect the seeded stress run caught on the unfixed tree.
+// ---------------------------------------------------------------------------
+
+// Raw node:http GET: fetch/URL normalize dot segments and reject malformed
+// targets client-side, so they can never send the paths these tests need.
+function rawGet(port, path) {
+  return new Promise((resolve) => {
+    const req = request({ host: '127.0.0.1', port, path, method: 'GET', agent: false }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', (err) => resolve({ status: 0, body: err.code ?? String(err) }));
+    req.setTimeout(5_000, () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
+
+// A foreign project for verify: files = { relPath: contents }.
+async function foreignProject(t, files) {
+  const dir = await mkdtemp(join(tmpdir(), 'i2p-foreign-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  for (const [rel, text] of Object.entries(files)) {
+    await mkdir(join(dir, rel, '..'), { recursive: true });
+    await writeFile(join(dir, rel), text);
+  }
+  return dir;
+}
+const verifyJson = async (dir) => JSON.parse((await i2p(['verify', dir, '--json']).catch((e) => e)).stdout);
+const PASSING_TEST = "import test from 'node:test';\ntest('ok', () => {});\n";
+
+// Stress H1: api-crud and auth-local persisted with bare concurrent writeFile
+// calls on one path. A burst of POSTs interleaved them into a store with
+// trailing garbage — the next start quarantined it and every row was gone.
+test('concurrent api-crud and auth-local writes leave complete, parseable stores', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'items' });
+  await i2p(['add', 'auth-local'], { cwd: projectDir });
+  const { port, stop } = await bootServer(t, projectDir);
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    const post = (path, body) => fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    }).then((r) => r.status);
+    const blob = 'x'.repeat(20_000);
+    const created = await Promise.all(Array.from({ length: 150 }, (_, i) => post('/api/items', { i, blob })));
+    assert.ok(created.every((s) => s === 201), `statuses: ${[...new Set(created)]}`);
+    const items = JSON.parse(await readFile(join(projectDir, 'data', 'items.json'), 'utf8'));
+    assert.equal(items.length, 150);
+    // Shrinking writes are the sharp case: an older, LONGER snapshot landing
+    // over a newer, shorter one used to leave trailing garbage behind.
+    const deleted = await Promise.all(items.slice(0, 75).map((item) => fetch(`${base}/api/items/${item.id}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(60_000),
+    }).then((r) => r.status)));
+    assert.ok(deleted.every((s) => s === 204 || s === 200), `statuses: ${[...new Set(deleted)]}`);
+    const remaining = JSON.parse(await readFile(join(projectDir, 'data', 'items.json'), 'utf8'));
+    assert.deepEqual(remaining.map((x) => x.id).sort(), items.slice(75).map((x) => x.id).sort());
+
+    const registered = await Promise.all(Array.from({ length: 20 }, (_, i) => post('/api/auth/register', { username: `user${i}`, password: 'correct horse battery' })));
+    assert.ok(registered.every((s) => s === 201), `statuses: ${[...new Set(registered)]}`);
+    const users = JSON.parse(await readFile(join(projectDir, 'data', 'users.json'), 'utf8'));
+    assert.equal(users.length, 20);
+  } finally {
+    await stop();
+  }
+});
+
+// Stress H16 (new, Windows): the temp-file + rename persist fails with a
+// transient EPERM whenever another process holds the store open — measured at
+// 2 in 3 renames under a concurrent reader — so writes 500ed and a repeated
+// `check` flipped to FAIL. The stores retry the rename briefly. (POSIX rename
+// never fails this way; there the test simply passes.)
+test('store writes survive another process reading the store file', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'items' });
+  const { port, stop } = await bootServer(t, projectDir);
+  const post = (i) => fetch(`http://127.0.0.1:${port}/api/items`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ i }),
+    signal: AbortSignal.timeout(30_000),
+  }).then((r) => r.status);
+  assert.equal(await post(-1), 201); // the store file exists before the reader starts
+  const reader = spawn(process.execPath, ['-e', [
+    "const { readFileSync } = require('node:fs');",
+    "const end = Date.now() + 60_000;",
+    "while (Date.now() < end) { try { readFileSync('data/items.json'); } catch {} }",
+  ].join('\n')], { cwd: projectDir, stdio: 'ignore' });
+  const readerExit = new Promise((resolve) => reader.once('exit', resolve));
+  try {
+    const statuses = [];
+    for (let i = 0; i < 60; i++) statuses.push(await post(i));
+    assert.deepEqual([...new Set(statuses)], [201]);
+  } finally {
+    reader.kill();
+    await readerExit;
+    await stop();
+  }
+});
+
+// Stress H3 + crash: a malformed target ("//%5c..%5c" makes new URL throw,
+// "/%E0%A4%A" makes decodeURIComponent throw) escaped the handler's try as an
+// unhandled rejection and killed the server; inside a route it was a 500
+// leaking "URI malformed". Both templates must answer 400 and stay up.
+for (const template of ['web', 'api']) {
+  test(`${template} server answers malformed request paths with 400 and stays up`, async (t) => {
+    const projectDir = await scaffold(t, { template, feature: 'api-crud', resource: 'items' });
+    const { port, stop } = await bootServer(t, projectDir);
+    try {
+      for (const path of ['//%5c..%5c', '/%E0%A4%A', '/api/items/%E0%A4%A', '/api/items/%']) {
+        const res = await rawGet(port, path);
+        assert.equal(res.status, 400, `${path} -> ${res.status} ${res.body}`);
+        assert.doesNotMatch(res.body, /URI malformed|Invalid URL/);
+      }
+      assert.equal((await rawGet(port, '/api/health')).status, 200, 'server died on a malformed path');
+    } finally {
+      await stop();
+    }
+  });
+}
+
+// Stress H17 (seed 4242): JSON.parse accepts nesting that JSON.stringify
+// cannot write back (it recurses), so ONE anonymous POST of a 20k-deep body
+// was stored by api-crud and every later GET/POST of the resource answered
+// 500 "Maximum call stack size exceeded" until a restart.
+for (const template of ['web', 'api']) {
+  test(`${template} server rejects absurdly nested JSON before a route can store it`, async (t) => {
+    const projectDir = await scaffold(t, { template, feature: 'api-crud', resource: 'items' });
+    const { port, stop } = await bootServer(t, projectDir); // routes load from the project cwd
+    try {
+      const base = `http://127.0.0.1:${port}/api/items`;
+      const post = (body) => fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+      const deep = `${'{"a":'.repeat(20_000)}1${'}'.repeat(20_000)}`;
+      const rejected = await post(deep);
+      assert.equal(rejected.status, 400);
+      assert.match((await rejected.json()).error, /nested too deeply/);
+      assert.equal((await fetch(base)).status, 200, 'the resource must still list');
+      assert.equal((await post(JSON.stringify({ title: 'x', nested: { ok: [1, { two: 2 }] } }))).status, 201);
+      // brackets inside strings (escaped quotes too) are text, not nesting
+      assert.equal((await post(JSON.stringify({ title: `\\"${'[{'.repeat(300)}` }))).status, 201);
+    } finally {
+      await stop();
+    }
+  });
+}
+
+// Stress H8: the rate-limit and cors wrappers destructured the handler
+// result, so a streaming handler (returns nothing) or a contract bug threw
+// "is not iterable" instead of reaching the server's own guard.
+test('rate-limit and cors wrappers pass a non-array handler result through', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'rate-limit' });
+  await i2p(['add', 'cors'], { cwd: projectDir });
+  const { rateLimit } = await import(pathToFileURL(join(projectDir, 'routes', 'ratelimit.mjs')).href);
+  const { cors } = await import(pathToFileURL(join(projectDir, 'routes', 'cors.mjs')).href);
+  const ctx = { req: { method: 'GET', headers: {}, socket: { remoteAddress: '127.0.0.1' } } };
+  for (const returned of [undefined, 'oops']) {
+    assert.equal(await rateLimit({ max: 5 })(async () => returned)(ctx), returned);
+    assert.equal(await cors()(async () => returned)(ctx), returned);
+  }
+  const [status, , headers] = await cors()(async () => [200, { ok: true }, null])(ctx);
+  assert.equal(status, 200);
+  assert.equal(headers.vary, 'Origin'); // null response headers still merge
+});
+
+// Stress H9: placeholders were replaced with string replacements, one key at
+// a time. `$'`/`$&` expanded (pasting the rest of the manifest into itself —
+// JSON.parse died AFTER every file was written), and later keys rescanned
+// earlier values (`--name "$&"` became "{{name}}").
+test('new keeps --name/--idea byte-identical: no $ patterns, no placeholder rescans', async (t) => {
+  const name = "$& $' {{slug}}";
+  const idea = "costs $' $` $$ more {{name}} __IDEA2PROTOTYPE_CMD__";
+  const projectDir = await scaffold(t, { template: 'library', name, idea });
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.equal(marker.name, name);
+  const spec = (await readFile(join(projectDir, 'PROTOTYPE.md'), 'utf8')).replaceAll('\r\n', '\n');
+  assert.ok(spec.includes(`> Idea: ${idea}\n`), spec.split('\n').slice(0, 4).join('\n'));
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS/);
+});
+
+// Stress H10: U+2028 passed the control-character guard, but JS treats it as
+// a line break — inside library/index.mjs's `//` header comment it ended the
+// comment, and the fresh scaffold failed its own syntax check.
+test('new rejects line/paragraph separators in --idea before writing', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'i2p-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const sepChar of [String.fromCharCode(0x2028), String.fromCharCode(0x2029)]) {
+    const err = await i2p(['new', 'proj', '--template', 'library', '--idea', `a${sepChar}b`], { cwd: root }).then(() => null, (e) => e);
+    assert.ok(err, 'a line separator in --idea must be rejected');
+    assert.match(err.stderr, /^idea2prototype: invalid --idea value/);
+    assert.deepEqual(await readdir(join(root, 'proj')).catch(() => []), []);
+  }
+});
+
+// Stress H12: a hand-edited marker broke the engine — a UTF-8 BOM (Windows
+// editors) read as "not valid JSON", and a missing or wrong-typed features
+// list crashed add with a raw TypeError from .push.
+test('hand-edited markers: BOM and missing features work, a bad features type dies readably', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const good = JSON.parse(await readFile(markerPath, 'utf8'));
+
+  await writeFile(markerPath, `${String.fromCharCode(0xfeff)}${JSON.stringify(good, null, 2)}`);
+  await i2p(['add', 'cors'], { cwd: projectDir });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS/);
+
+  const { features, ...withoutFeatures } = good;
+  await writeFile(markerPath, JSON.stringify(withoutFeatures));
+  await i2p(['add', 'sse'], { cwd: projectDir });
+  assert.deepEqual(JSON.parse(await readFile(markerPath, 'utf8')).features.map((f) => f.name), ['sse']);
+
+  await writeFile(markerPath, JSON.stringify({ ...good, features: 'cors' }));
+  const err = await i2p(['add', 'upload'], { cwd: projectDir }).then(() => null, (e) => e);
+  assert.ok(err);
+  assert.match(err.stderr, /^idea2prototype: \.idea2prototype\.json "features" must be a list/);
+});
+
+// Stress H11: concurrent adds each read-modify-wrote the marker, so features
+// whose files landed on disk were silently missing from features[] (4 of 8
+// lost on the first stress round).
+test('concurrent adds on one project are all recorded in the marker', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const adds = [['api-crud', '--resource', 'items'], ['api-crud', '--resource', 'notes'], ['auth-local'], ['upload'], ['rate-limit'], ['cors'], ['sse'], ['worker-jobs']];
+  await Promise.all(adds.map((args) => i2p(['add', ...args], { cwd: projectDir })));
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  const recorded = marker.features.map((f) => (f.resource ? `${f.name}:${f.resource}` : f.name)).sort();
+  assert.deepEqual(recorded, adds.map(([f, , r]) => (r ? `${f}:${r}` : f)).sort());
+});
+
+// Stress H7: two checks on one project ran the generated tests against the
+// same data/*.json at once and flipped one verdict to FAIL. Runs on a project
+// now take a per-project lock: a live holder is waited for, a dead one's lock
+// is taken over at once.
+test('check waits for a live lock holder on the same project and takes over a dead one', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+
+  await writeFile(lockPath, '2147483646'); // no such process
+  await i2p(['add', 'cors'], { cwd: projectDir, timeout: 30_000 });
+
+  // alive holder (this test process): add and check must both wait for it
+  for (const args of [['add', 'sse'], ['check']]) {
+    await writeFile(lockPath, String(process.pid));
+    const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    t.after(() => child.kill());
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c; });
+    child.stderr.on('data', (c) => { stderr += c; });
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && !/waiting for another run/.test(stderr)) await new Promise((r) => setTimeout(r, 100));
+    assert.match(stderr, /waiting for another run \(pid \d+\)/, `${args[0]} did not wait`);
+    assert.equal(child.exitCode, null, `${args[0]} must wait, not run alongside the holder`);
+    await rm(lockPath);
+    assert.equal(await exited, 0, stdout + stderr);
+  }
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors', 'sse']);
+});
+
+// Review of H7: pids get recycled (fast on Windows), so a crashed holder's
+// lock can name a pid that is alive again — every later run then waited out
+// the full timeout and died. A lock older than any real run is stale.
+test('a lock far older than any run is taken over even if its pid looks alive', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+
+  await writeFile(lockPath, String(process.pid)); // alive: this test process
+  const old = new Date(Date.now() - 31 * 60_000);
+  await utimes(lockPath, old, old);
+  const { stderr } = await i2p(['add', 'cors'], { cwd: projectDir, timeout: 20_000 });
+  assert.doesNotMatch(stderr, /waiting for another run/);
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
+});
+
+// Review of H7 (CodeRabbit): when the lock cannot be created at all, add used
+// to run UNLOCKED and could lose marker updates. add now refuses; check/verify
+// only judge, so they warn and still deliver a verdict.
+test('an uncreatable lock makes add refuse and check warn but still judge', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const before = await readFile(join(projectDir, '.idea2prototype.json'), 'utf8');
+  const missing = join(projectDir, 'no-such-tmp');
+  const env = { ...process.env, TMPDIR: missing, TEMP: missing, TMP: missing };
+  await assert.rejects(i2p(['add', 'cors'], { cwd: projectDir, env }), (err) => {
+    assert.match(err.stderr, /cannot create the project lock .*refusing to modify the project unlocked/);
+    return true;
+  });
+  assert.equal(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'), before);
+  const { stdout, stderr } = await i2p(['check'], { cwd: projectDir, env });
+  assert.match(stderr, /cannot create the project lock .*running without it/);
+  assert.match(stdout, /PASS/);
+});
+
+// Review of H7 (CodeRabbit): two waiters that judged the same dead lock stale
+// could each delete it — the second deleting the first's fresh lock — and run
+// side by side. Takeover is serialized; a crowd of adds after a crash must
+// still record every feature.
+test('concurrent adds after a crashed holder all take turns and are all recorded', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+  await writeFile(lockPath, '2147483646'); // crashed holder: no such process
+  const adds = [['api-crud', '--resource', 'items'], ['api-crud', '--resource', 'notes'], ['auth-local'], ['upload'], ['rate-limit'], ['cors'], ['sse'], ['worker-jobs']];
+  await Promise.all(adds.map((args) => i2p(['add', ...args], { cwd: projectDir, timeout: 60_000 })));
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.equal(marker.features.length, adds.length);
+});
+
+// Stress F2 on Windows CI (seed 1337): a holder released the lock between a
+// waiter's failed create and its read. The failed read/stat passed for an
+// empty, ancient lock, so the takeover deleted the NEXT holder's just-created
+// (still empty) lock, two adds ran at once, and the marker was torn. The
+// preload widens both windows (see the fixture) to make the race reproducible:
+// before the fix, about 1 round in 7 lost a feature (30 rounds: <1% miss).
+test('lock takeover never deletes a just-created holder under widened race windows', { timeout: 600_000 }, async (t) => {
+  if (!process.allowedNodeEnvironmentFlags.has('--import')) {
+    t.skip('needs node --import (Node >= 18.18)');
+    return;
+  }
+  const preload = pathToFileURL(join(HERE, 'fixtures', 'lock-race-preload.mjs')).href;
+  const resources = Array.from({ length: 8 }, (_, i) => `res${i}`);
+  for (let round = 0; round < 30; round++) {
+    const projectDir = await scaffold(t, {});
+    await Promise.all(resources.map((r) => run(process.execPath, ['--import', preload, SCRIPT, 'add', 'api-crud', '--resource', r], { cwd: projectDir, timeout: 120_000 })));
+    const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+    assert.deepEqual(marker.features.map((f) => f.resource).sort(), [...resources].sort(), `round ${round}: a concurrent add was lost`);
+  }
+});
+
+// Review of S1e (security review): a lock that exists but cannot be read
+// (here a directory: EISDIR) retried at once with no sleep and no deadline —
+// a busy loop forever. Only a vanished lock (ENOENT) retries at once; an
+// unreadable one is waited on like a live holder.
+test('an unreadable lock is waited on, not spun on, and released by its removal', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { recursive: true, force: true }));
+  await mkdir(lockPath);
+  const child = spawn(process.execPath, [SCRIPT, 'add', 'cors'], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  t.after(() => child.kill());
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (c) => { stdout += c; });
+  child.stderr.on('data', (c) => { stderr += c; });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && !/waiting for another run/.test(stderr)) await new Promise((r) => setTimeout(r, 100));
+  assert.match(stderr, /waiting for another run \(pid \?\)/, 'an unreadable lock must be waited on');
+  assert.equal(child.exitCode, null);
+  await rm(lockPath, { recursive: true });
+  assert.equal(await exited, 0, stdout + stderr);
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
+});
+
+// Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
+// was killed with ENOBUFS and judged "? failed of ?".
+test('verify passes a passing suite that logs 20 MiB', async (t) => {
+  const dir = await foreignProject(t, {
+    'loud.test.mjs': "import test from 'node:test';\nconst line = 'x'.repeat(1023);\ntest('loud but passing', () => { for (let i = 0; i < 20 * 1024; i++) console.log(line); });\n",
+  });
+  const verdict = await verifyJson(dir);
+  assert.equal(verdict.status, 'PASS', JSON.stringify(verdict.steps));
+});
+
+// Stress H6: the syntax step walked dot-dirs, so build caches (.next/,
+// .cache/) were judged as source — 200 generated files failed a real project.
+test('verify does not judge build output in dot-dirs as source', async (t) => {
+  const dir = await foreignProject(t, {
+    'index.mjs': 'export const ok = 1;\n',
+    'index.test.mjs': PASSING_TEST,
+    '.cache/x/broken.js': 'this is not javascript (\n',
+    '.next/server/chunk.js': 'export default {\n',
+  });
+  const verdict = await verifyJson(dir);
+  assert.equal(verdict.status, 'PASS', JSON.stringify(verdict.steps));
+  assert.equal(verdict.steps[0].files, 2);
+});
+
+// Stress H13: a root-level test file named "--x-test.mjs" was passed bare to
+// node --test, parsed as a flag ("bad option"), and failed the run.
+test('verify runs a root-level dash-led test file as a file, not a flag', async (t) => {
+  const dir = await foreignProject(t, { '--x-test.mjs': PASSING_TEST });
+  const verdict = await verifyJson(dir);
+  assert.equal(verdict.status, 'PASS', JSON.stringify(verdict.steps));
+  assert.match(verdict.steps[1].detail, /1 tests passed \(1 files\)/);
+});
+
+// Stress H14: map read every *.js entry with no error handling — a dangling
+// symlink killed the whole command with a raw ENOENT.
+test('map skips a dangling .js symlink instead of dying', async (t) => {
+  const dir = await foreignProject(t, { 'index.mjs': 'export const ok = 1;\n' });
+  try {
+    await symlink(join(dir, 'missing.js'), join(dir, 'dangling.js'));
+  } catch (err) {
+    t.skip(`symlink unavailable here (${err.code})`);
+    return;
+  }
+  const { stdout } = await i2p(['map', dir, '--json']);
+  const map = JSON.parse(stdout);
+  assert.deepEqual(map.files.map((f) => f.path), ['index.mjs']);
+  assert.deepEqual(map.unreadable, ['dangling.js']);
+});
+
+// Review of H14 (CodeRabbit): an unreadable ROOT was swallowed (its prefix is
+// empty), so map reported "0 code files" with no hint why.
+test('map reports an unreadable root instead of an empty success', async (t) => {
+  if (process.platform === 'win32' || process.getuid?.() === 0) {
+    t.skip('needs POSIX permissions and a non-root user');
+    return;
+  }
+  const dir = await foreignProject(t, { 'index.mjs': 'export const ok = 1;\n' });
+  await chmod(dir, 0o000);
+  let map;
+  try {
+    map = JSON.parse((await i2p(['map', dir, '--json'])).stdout);
+  } finally {
+    await chmod(dir, 0o755); // before the after-hook rm, which needs to list it
+  }
+  assert.deepEqual(map.unreadable, ['.']);
 });

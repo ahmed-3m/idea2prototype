@@ -12,9 +12,11 @@
 //   idea2prototype list
 //
 // `check` prints a compact verdict (~10 lines) so an agent never reads raw logs.
-import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { existsSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -86,10 +88,12 @@ async function cmdNew(rest) {
   const idea = opts.idea ?? '(describe the idea in one sentence)';
   // --name/--idea land verbatim in the JSON manifest and generated files; a
   // quote or backslash would poison the manifest AFTER all files are on disk.
-  // Reject before writing anything.
+  // U+2028/U+2029 are line terminators to JS: inside a template's `//`
+  // comment they end the comment and the fresh scaffold fails its own syntax
+  // check. Reject before writing anything.
   for (const [flag, value] of [['--name', name], ['--idea', idea]]) {
-    if (/["\\\u0000-\u001f]/.test(value)) {
-      die(`invalid ${flag} value — quotes, backslashes, and control characters are not allowed`);
+    if (/["\\\u0000-\u001f\u2028\u2029]/.test(value)) {
+      die(`invalid ${flag} value — quotes, backslashes, control characters, and line/paragraph separators are not allowed`);
     }
   }
 
@@ -255,8 +259,17 @@ async function cmdAdd(rest) {
   if (!feature) die(`usage: idea2prototype add <feature> — available: ${available}`);
   const def = FEATURES[feature];
   if (!def) die(`unknown feature "${feature}" — available: ${available}`);
+  return withProjectLock(process.cwd(), 60_000, () => addFeature(feature, def, opts), { required: true });
+}
 
+async function addFeature(feature, def, opts) {
   const marker = await loadMarker();
+  // Hand-edited markers: a missing list is an empty one; anything else that
+  // is not a list must die readably, not as a TypeError from .push.
+  marker.features ??= [];
+  if (!Array.isArray(marker.features)) {
+    die('.idea2prototype.json "features" must be a list — fix it by hand or restore it from git');
+  }
   if (!def.appliesTo.includes(marker.template)) {
     die(`${feature} applies to ${def.appliesTo.join('/')} templates (this project: ${marker.template})`);
   }
@@ -305,8 +318,15 @@ async function cmdCheck(rest) {
   checkPositionalCount(opts, 1, 'check takes one optional directory (check [dir])');
   const target = resolveTargetDir(opts._[0]);
   await loadMarker(target); // target must be a idea2prototype project
-  return runChecks(target, 'json' in opts, 'check');
+  return withProjectLock(target, CHECK_LOCK_WAIT_MS, () => runChecks(target, 'json' in opts, 'check'));
 }
+
+// A queued check waits out a full run of the one ahead of it: the 5-minute
+// test ceiling plus syntax and boot.
+const CHECK_LOCK_WAIT_MS = 15 * 60_000;
+// No legitimate run holds a project lock this long (a check tops out near 6
+// minutes), so an older lock is stale even if its pid was recycled.
+const LOCK_MAX_AGE_MS = 30 * 60_000;
 
 // verify: run the same verdict on ANY Node project — used to judge projects
 // this tool never scaffolded (benchmark control arm, external code).
@@ -314,7 +334,7 @@ async function cmdVerify(rest) {
   const opts = parseFlags(rest, [], ['json']);
   checkPositionalCount(opts, 1, 'verify takes one optional directory (verify [dir])');
   const target = resolveTargetDir(opts._[0]);
-  return runChecks(target, 'json' in opts, 'verify');
+  return withProjectLock(target, CHECK_LOCK_WAIT_MS, () => runChecks(target, 'json' in opts, 'verify'));
 }
 
 async function runChecks(projectDir, asJson, mode = 'check') {
@@ -457,6 +477,8 @@ async function discoverTestFiles(projectDir) {
   return [...found].sort();
 }
 
+const TEST_OUTPUT_CAP = 256 * 1024 * 1024;
+
 async function stepTests(projectDir, syntaxPassed) {
   if (!syntaxPassed) return { name: 'tests', status: 'skip', detail: 'skipped (syntax failed)', cause: 'syntax' };
   const testFiles = (await discoverTestFiles(projectDir)).map((f) => relative(projectDir, f));
@@ -474,7 +496,10 @@ async function stepTests(projectDir, syntaxPassed) {
   // Strip NODE_TEST_CONTEXT so a check spawned from inside a test runner
   // doesn't put the child into child-reporter mode (no TAP summary).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
-  const fileArgs = testFiles.map((f) => f.split(sep).join('/'));
+  // A root-level "--x-test.mjs" passed bare parses as a runner flag ("bad
+  // option"). Pass dash-led paths absolute — a ./ prefix is not enough: the
+  // runner normalizes it away before re-spawning the file.
+  const fileArgs = testFiles.map((f) => (f.startsWith('-') ? join(projectDir, f) : f.split(sep).join('/')));
   // Serial execution trades wall-clock for determinism — scale the spawn
   // budget with the file count so slow-but-passing suites aren't killed
   // (90s floor, 30s per file, 5-minute ceiling).
@@ -482,7 +507,9 @@ async function stepTests(projectDir, syntaxPassed) {
     encoding: 'utf8',
     timeout: Math.min(300_000, Math.max(90_000, 30_000 * testFiles.length)),
     cwd: projectDir,
-    maxBuffer: 16 * 1024 * 1024,
+    // Chatty-but-passing suites are normal (request logs, debug prints): at
+    // the old 16 MiB a 20 MiB log was killed mid-run and judged "? failed of ?".
+    maxBuffer: TEST_OUTPUT_CAP,
     env,
   };
   const capture = (res) => `${res.stdout ?? ''}\n${res.stderr ?? ''}`.replaceAll('\r\n', '\n');
@@ -512,6 +539,14 @@ async function stepTests(projectDir, syntaxPassed) {
   // exit). 24's runner never fires there, so the spawn budget is the only
   // bound (ETIMEDOUT, no summary). Both must read as a timeout verdict —
   // never "? failed of ?" or spawn plumbing.
+  if (res.error?.code === 'ENOBUFS') {
+    return {
+      name: 'tests',
+      status: 'fail',
+      detail: `test output exceeded ${TEST_OUTPUT_CAP / 1024 / 1024} MiB — the run was cut off, no verdict`,
+      notes: ['quiet the logging in the tests (console.log in a hot loop?) and re-run'],
+    };
+  }
   const fileTimeoutMs = /test timed out after (\d+)ms/.exec(out)?.[1];
   if (res.error?.code === 'ETIMEDOUT' || fileTimeoutMs !== undefined) {
     return {
@@ -704,13 +739,29 @@ async function cmdMap(rest) {
   const SKIP = new Set(['node_modules', '.git', 'data', 'uploads', 'dist', 'coverage']);
   const code = [];
   const other = [];
+  // A dangling foo.js symlink or an unreadable file/dir is skipped and
+  // counted — one bad entry must not kill the map with a raw ENOENT/EACCES.
+  const unreadable = [];
   async function walk(current, prefix) {
-    for (const entry of await readdir(current, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      unreadable.push(prefix || '.');
+      return;
+    }
+    for (const entry of entries) {
       if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) await walk(join(current, entry.name), rel);
       else if (/\.(mjs|js)$/.test(entry.name)) {
-        const text = await readFile(join(current, entry.name), 'utf8');
+        let text;
+        try {
+          text = await readFile(join(current, entry.name), 'utf8');
+        } catch {
+          unreadable.push(rel);
+          continue;
+        }
         code.push({ path: rel, loc: text.split('\n').length, exports: findExports(text) });
       } else other.push(rel);
     }
@@ -720,9 +771,10 @@ async function cmdMap(rest) {
   const totalLoc = code.reduce((n, f) => n + f.loc, 0);
 
   if (asJson) {
-    SAY(JSON.stringify({ files: code, staticAssets: other }, null, 2));
+    SAY(JSON.stringify({ files: code, staticAssets: other, ...(unreadable.length ? { unreadable } : {}) }, null, 2));
   } else {
-    SAY(`map — ${code.length} code files, ${totalLoc} LOC (${other.length} static files omitted)`);
+    const skipped = unreadable.length ? `, ${unreadable.length} unreadable skipped` : '';
+    SAY(`map — ${code.length} code files, ${totalLoc} LOC (${other.length} static files omitted${skipped})`);
     for (const f of code.slice(0, 30)) {
       const exports = f.exports.length ? `  → ${f.exports.join(', ')}` : '';
       SAY(`  ${f.path.padEnd(36)} ${String(f.loc).padStart(4)} LOC${exports}`);
@@ -810,10 +862,12 @@ function resolveTargetDir(dir) {
   return target;
 }
 
-// Canonical marker reader: null when absent or unparseable.
+// Canonical marker reader: null when absent, unparseable, or not an object.
+// A UTF-8 BOM (Windows editors add one on save) is not corruption.
 async function readMarker(projectDir) {
   try {
-    return JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+    const marker = JSON.parse((await readFile(join(projectDir, '.idea2prototype.json'), 'utf8')).replace(/^\uFEFF/, ''));
+    return marker && typeof marker === 'object' && !Array.isArray(marker) ? marker : null;
   } catch {
     return null;
   }
@@ -825,36 +879,165 @@ async function loadMarker(projectDir = process.cwd()) {
     die(`not a idea2prototype project (no .idea2prototype.json in ${projectDir}) — run: idea2prototype new <dir>`);
   }
   const marker = await readMarker(projectDir);
-  if (!marker) die('.idea2prototype.json is not valid JSON');
+  if (!marker) die('.idea2prototype.json is not a valid JSON object');
   return marker;
 }
 
-async function replacePlaceholders(root, mapping) {
+// One engine run at a time per project. Concurrent `add`s read-modify-write
+// the marker (features silently dropped), and concurrent `check`s run the
+// generated tests against the same data/*.json (one verdict flipped to FAIL).
+// The lock lives in the OS temp dir, keyed by project path, so `verify`
+// never writes into a project it is only judging. A holder that died is
+// detected by pid and its lock taken over.
+// `required`: commands that read-modify-write the project (add) refuse to run
+// unlocked; read-only verdicts (check/verify) warn and run anyway, so a
+// sandbox with an unwritable temp dir still gets a verdict.
+async function withProjectLock(projectDir, waitMs, fn, { required = false } = {}) {
+  // realpath: one project reached via a symlink, /private/var vs /var, or a
+  // different drive-letter case must still map to ONE lock.
+  let real = projectDir;
+  try {
+    real = realpathSync.native(projectDir);
+  } catch {}
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  const deadline = Date.now() + waitMs;
+  let announced = false;
+  let transient = 0;
+  for (;;) {
+    try {
+      await writeFile(lockPath, String(process.pid), { flag: 'wx' });
+      break;
+    } catch (err) {
+      // Windows: creating a file another process is deleting fails with
+      // EPERM ("delete pending"), not EEXIST — measured at ~1 in 130
+      // contended attempts. That is contention, not an unusable temp dir.
+      if (['EPERM', 'EACCES', 'EBUSY'].includes(err?.code) && ++transient <= 50) {
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      if (err?.code !== 'EEXIST') {
+        const why = `cannot create the project lock ${lockPath} (${err?.code ?? err})`;
+        if (required) die(`${why} — refusing to modify the project unlocked`);
+        FAIL(`idea2prototype: ${why} — running without it`);
+        return fn();
+      }
+    }
+    // A lock that vanished between our create and these reads was released:
+    // retry the create. Never judge it — a failed read/stat must not pass for
+    // an empty or ancient lock, or a takeover would delete the NEXT holder's.
+    // A lock that exists but cannot be read (EACCES, EISDIR) is waited on
+    // like a live holder, so the deadline still applies.
+    let unreadable = false;
+    const gone = (err) => {
+      if (err?.code !== 'ENOENT') unreadable = true;
+      return null;
+    };
+    const before = await stat(lockPath).catch(gone);
+    const seen = await readFile(lockPath, 'utf8').catch(gone);
+    if ((!before || seen === null) && !unreadable) continue;
+    const holder = Number(seen);
+    const age = before ? Date.now() - before.mtimeMs : 0;
+    // An empty file is a holder between create and write — stale only if old.
+    // Past LOCK_MAX_AGE_MS any lock is stale: a recycled pid can look alive.
+    const stale = !unreadable && (age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000));
+    if (stale) {
+      // Takeover is serialized by an exclusive claim: without it, two waiters
+      // that both judged the same lock stale could each delete it — the second
+      // deleting the FIRST one's fresh lock — and both would run. Under the
+      // claim, the re-read sees any lock another waiter already replaced.
+      const claim = `${lockPath}.takeover`;
+      try {
+        await writeFile(claim, String(process.pid), { flag: 'wx' });
+      } catch {
+        // Someone else is taking over. A claim older than any takeover means
+        // its owner died mid-takeover.
+        const claimAge = Date.now() - ((await stat(claim).catch(() => null))?.mtimeMs ?? Date.now());
+        if (claimAge > 10_000) await rm(claim, { force: true });
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      try {
+        // Same file (inode + mtime), not just same content: a holder that was
+        // just created is empty too, and must not be mistaken for the stale one.
+        const now = await stat(lockPath).catch(() => null);
+        const same = now && now.ino === before.ino && now.mtimeMs === before.mtimeMs;
+        if (same && (await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
+      } finally {
+        await rm(claim, { force: true });
+      }
+      continue;
+    }
+    if (Date.now() > deadline) {
+      die(`another idea2prototype run (pid ${holder || '?'}) is still working on this project — wait for it, or delete ${lockPath} if no such process exists`);
+    }
+    if (!announced) {
+      FAIL(`idea2prototype: waiting for another run (pid ${holder || '?'}) on this project to finish…`);
+      announced = true;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  // die() exits without unwinding finally blocks — the exit hook covers it.
+  const release = () => {
+    try {
+      unlinkSync(lockPath);
+    } catch {}
+  };
+  process.once('exit', release);
+  try {
+    return await fn();
+  } finally {
+    process.off('exit', release);
+    release();
+  }
+}
+
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM'; // alive, owned by another user
+  }
+}
+
+// ONE pass over each file with a replacer FUNCTION. A string replacement
+// expands `$&`, `$'`, `` $` `` and `$$` (`--idea "costs $' more"` pasted the
+// rest of the manifest into itself), and placeholder-by-placeholder passes
+// rescan earlier values (`--name "{{slug}}"` was itself replaced).
+async function replacePlaceholders(root, mapping, pattern = placeholderPattern(mapping)) {
   const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {
     const full = join(root, entry.name);
     if (entry.isDirectory()) {
-      await replacePlaceholders(full, mapping);
+      await replacePlaceholders(full, mapping, pattern);
       continue;
     }
     if (!TEXT_EXTENSIONS.has(extname(entry.name))) continue;
-    let text = await readFile(full, 'utf8');
-    const before = text;
-    for (const [needle, value] of Object.entries(mapping)) text = text.replaceAll(needle, value);
+    const before = await readFile(full, 'utf8');
+    const text = before.replace(pattern, (needle) => mapping[needle]);
     if (text !== before) await writeFile(full, text);
   }
 }
 
+function placeholderPattern(mapping) {
+  return new RegExp(Object.keys(mapping).map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+}
+
 // One canonical walker: collect files under root, skipping skip-set entries,
 // keeping names matching keep(). File-class policies live at the call sites.
+// Dot-dirs (.next, .cache, .turbo, ...) are tool output, not project source —
+// test discovery already skips them; judging them failed real projects on
+// hundreds of generated files and spawned one `node --check` per file.
 async function collectJsFiles(root, { skip, keep }) {
   const out = [];
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (skip.has(entry.name)) continue;
       const full = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (keep(entry.name)) out.push(full);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.')) await walk(full);
+      } else if (keep(entry.name)) out.push(full);
     }
   }
   await walk(root);
@@ -866,7 +1049,7 @@ async function collectJsFiles(root, { skip, keep }) {
 // CommonJS — those files get the dual-parse treatment in stepSyntax (#17).
 const SERVER_SKIP = new Set(['node_modules', '.git', 'public', 'data', 'dist', 'coverage', 'uploads']);
 const collectServerFiles = (root) =>
-  collectJsFiles(root, { skip: SERVER_SKIP, keep: (name) => /\.(mjs|js)$/.test(name) && !name.endsWith('.config.cjs') });
+  collectJsFiles(root, { skip: SERVER_SKIP, keep: (name) => /\.(mjs|js)$/.test(name) });
 
 // public/ is browser territory: .js only, dual-parsed (ESM, then classic).
 const FRONTEND_SKIP = new Set(['node_modules', '.git']);

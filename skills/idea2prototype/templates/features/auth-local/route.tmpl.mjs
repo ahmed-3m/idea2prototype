@@ -53,9 +53,34 @@ function loadUsers() {
   return usersReady;
 }
 
-async function persistUsers() {
-  await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  await writeFile(USERS_FILE, JSON.stringify(await loadUsers(), null, 2));
+// Windows refuses to rename over a file another handle has open (a reader in
+// another process, the search indexer, antivirus) with a transient EPERM/
+// EACCES/EBUSY — measured at 2 in 3 renames under a concurrent reader. Retry
+// briefly instead of failing the write.
+async function renameWithRetry(from, to) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await rename(from, to);
+    } catch (err) {
+      if (attempt >= 20 || !['EPERM', 'EACCES', 'EBUSY'].includes(err?.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 10 * attempt));
+    }
+  }
+}
+
+// Chained + atomic (temp file, then rename), same as api-crud and jobs: two
+// concurrent registers must not interleave their writes into a corrupt store,
+// which the next start would quarantine — every account gone.
+let persistChain = Promise.resolve();
+function persistUsers() {
+  const write = persistChain.then(async () => {
+    await mkdir(join(process.cwd(), 'data'), { recursive: true });
+    const tmp = `${USERS_FILE}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(await loadUsers(), null, 2));
+    await renameWithRetry(tmp, USERS_FILE);
+  });
+  persistChain = write.catch(() => {});
+  return write;
 }
 
 async function getSecret() {
