@@ -922,12 +922,24 @@ async function withProjectLock(projectDir, waitMs, fn, { required = false } = {}
         return fn();
       }
     }
-    const seen = await readFile(lockPath, 'utf8').catch(() => '');
+    // A lock that vanished between our create and these reads was released:
+    // retry the create. Never judge it — a failed read/stat must not pass for
+    // an empty or ancient lock, or a takeover would delete the NEXT holder's.
+    // A lock that exists but cannot be read (EACCES, EISDIR) is waited on
+    // like a live holder, so the deadline still applies.
+    let unreadable = false;
+    const gone = (err) => {
+      if (err?.code !== 'ENOENT') unreadable = true;
+      return null;
+    };
+    const before = await stat(lockPath).catch(gone);
+    const seen = await readFile(lockPath, 'utf8').catch(gone);
+    if ((!before || seen === null) && !unreadable) continue;
     const holder = Number(seen);
-    const age = Date.now() - ((await stat(lockPath).catch(() => null))?.mtimeMs ?? 0);
+    const age = before ? Date.now() - before.mtimeMs : 0;
     // An empty file is a holder between create and write — stale only if old.
     // Past LOCK_MAX_AGE_MS any lock is stale: a recycled pid can look alive.
-    const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
+    const stale = !unreadable && (age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000));
     if (stale) {
       // Takeover is serialized by an exclusive claim: without it, two waiters
       // that both judged the same lock stale could each delete it — the second
@@ -945,7 +957,11 @@ async function withProjectLock(projectDir, waitMs, fn, { required = false } = {}
         continue;
       }
       try {
-        if ((await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
+        // Same file (inode + mtime), not just same content: a holder that was
+        // just created is empty too, and must not be mistaken for the stale one.
+        const now = await stat(lockPath).catch(() => null);
+        const same = now && now.ino === before.ino && now.mtimeMs === before.mtimeMs;
+        if (same && (await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
       } finally {
         await rm(claim, { force: true });
       }

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly stress run with a fresh seed (see the stress job below).
+  schedule:
+    - cron: '17 4 * * 1'
 
 # Least privilege: CI only needs to read the repo. Without this block the
 # workflow token gets the org-default scopes (publish.yml keeps its own
@@ -32,3 +35,26 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Engine self-tests + consistency guard (scaffold → add → check → verify)
         run: node --test tests/engine.test.mjs tests/consistency.test.mjs
+
+  # Adversarial stress suite (tests/stress.test.mjs): concurrency, request
+  # bursts, fuzzed argv/HTTP, pathological repos. Kept out of the 9-cell matrix
+  # so the main gate stays fast. Pushes and PRs replay one fixed seed (a red
+  # run is reproducible locally with the same I2P_STRESS_SEED); the weekly
+  # scheduled run draws a fresh seed and prints it in every failure message.
+  stress:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Stress suite (seeded)
+        shell: bash
+        env:
+          I2P_STRESS_SEED: ${{ github.event_name == 'schedule' && github.run_id || '1337' }}
+        run: node --test tests/stress.test.mjs

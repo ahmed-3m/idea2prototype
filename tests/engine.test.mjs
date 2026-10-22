@@ -1660,6 +1660,55 @@ test('concurrent adds after a crashed holder all take turns and are all recorded
   assert.equal(marker.features.length, adds.length);
 });
 
+// Stress F2 on Windows CI (seed 1337): a holder released the lock between a
+// waiter's failed create and its read. The failed read/stat passed for an
+// empty, ancient lock, so the takeover deleted the NEXT holder's just-created
+// (still empty) lock, two adds ran at once, and the marker was torn. The
+// preload widens both windows (see the fixture) to make the race reproducible:
+// before the fix, about 1 round in 7 lost a feature (30 rounds: <1% miss).
+test('lock takeover never deletes a just-created holder under widened race windows', { timeout: 600_000 }, async (t) => {
+  if (!process.allowedNodeEnvironmentFlags.has('--import')) {
+    t.skip('needs node --import (Node >= 18.18)');
+    return;
+  }
+  const preload = pathToFileURL(join(HERE, 'fixtures', 'lock-race-preload.mjs')).href;
+  const resources = Array.from({ length: 8 }, (_, i) => `res${i}`);
+  for (let round = 0; round < 30; round++) {
+    const projectDir = await scaffold(t, {});
+    await Promise.all(resources.map((r) => run(process.execPath, ['--import', preload, SCRIPT, 'add', 'api-crud', '--resource', r], { cwd: projectDir, timeout: 120_000 })));
+    const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+    assert.deepEqual(marker.features.map((f) => f.resource).sort(), [...resources].sort(), `round ${round}: a concurrent add was lost`);
+  }
+});
+
+// Review of S1e (security review): a lock that exists but cannot be read
+// (here a directory: EISDIR) retried at once with no sleep and no deadline —
+// a busy loop forever. Only a vanished lock (ENOENT) retries at once; an
+// unreadable one is waited on like a live holder.
+test('an unreadable lock is waited on, not spun on, and released by its removal', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { recursive: true, force: true }));
+  await mkdir(lockPath);
+  const child = spawn(process.execPath, [SCRIPT, 'add', 'cors'], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  t.after(() => child.kill());
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (c) => { stdout += c; });
+  child.stderr.on('data', (c) => { stderr += c; });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && !/waiting for another run/.test(stderr)) await new Promise((r) => setTimeout(r, 100));
+  assert.match(stderr, /waiting for another run \(pid \?\)/, 'an unreadable lock must be waited on');
+  assert.equal(child.exitCode, null);
+  await rm(lockPath, { recursive: true });
+  assert.equal(await exited, 0, stdout + stderr);
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
+});
+
 // Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
 // was killed with ENOBUFS and judged "? failed of ?".
 test('verify passes a passing suite that logs 20 MiB', async (t) => {
