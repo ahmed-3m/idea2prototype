@@ -895,7 +895,7 @@ test('unknown flags die with the allowed list instead of being ignored', async (
   );
   await assert.rejects(
     i2p(['list', '--nope'], { cwd: HERE }),
-    (err) => /unknown flag "--nope" \(allowed: none\)/.test(err.stderr ?? ''),
+    (err) => /unknown flag "--nope" \(allowed: --json\)/.test(err.stderr ?? ''),
   );
   await assert.rejects(
     i2p(['map', '--nope'], { cwd: HERE }),
@@ -994,9 +994,33 @@ test('npm bin shim runs the engine', async () => {
 
 test('list shows templates and features', async () => {
   const { stdout } = await i2p(['list'], { cwd: HERE });
-  assert.match(stdout, /templates: /);
+  assert.match(stdout, /templates: api, cli, library, web, worker/);
   for (const name of ['api', 'cli', 'library', 'web', 'worker']) {
     assert.match(stdout, new RegExp(`\\b${name}\\b`));
+  }
+});
+
+test('list --json emits machine-readable templates and features', async () => {
+  const human = await i2p(['list'], { cwd: HERE });
+  assert.equal(human.stderr, '');
+  const templatesLine = human.stdout.split('\n').find((l) => l.startsWith('templates: '));
+  assert.ok(templatesLine, 'human output contains templates line');
+  const humanTemplates = templatesLine.replace('templates: ', '').trim().split(', ').map((s) => s.trim()).filter(Boolean);
+
+  const res = await i2p(['list', '--json'], { cwd: HERE });
+  assert.equal(res.stderr, '');
+  const parsed = JSON.parse(res.stdout);
+
+  const pkg = JSON.parse(await readFile(join(HERE, '..', 'package.json'), 'utf8'));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.version, pkg.version);
+  assert.deepEqual(new Set(parsed.templates), new Set(humanTemplates));
+  assert.deepEqual(parsed.templates, ['api', 'cli', 'library', 'web', 'worker']);
+
+  const featuresLine = human.stdout.split('\n').find((l) => l.startsWith('features: '));
+  assert.ok(featuresLine, 'human output contains features line');
+  for (const feat of parsed.features) {
+    assert.match(featuresLine, new RegExp(`\\b${feat}\\b`));
   }
 });
 
