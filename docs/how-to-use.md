@@ -106,7 +106,7 @@ add <feature> [options]                      no [dir] — run inside the project
 check [dir] [--json]                         syntax+tests+boot; requires .idea2prototype.json (a scaffolded project)
 verify [dir] [--json]                        same verdict on ANY Node project (judge mode): no marker, boot ok = HTTP 200–399, an empty dir FAILs
 map [dir] [--json]                           compact repo map: paths + LOC + exports
-list / version                               what's available / engine version
+list [--json] / version                      what's available / engine version (`--json` emits `{ok, version, templates, features}`)
 ```
 
 `check --json` shape (verified): `{"tool","version","scaffoldVersion","project","status","steps":[{"name","status","detail"}…]}`. A trailing `note  scaffolded by v..., engine v... — generated files may differ` is informational, never a failure.

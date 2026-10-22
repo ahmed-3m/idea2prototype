@@ -25,6 +25,7 @@ First-trial friction fixes (2026-10-21 external review):
 - Also from the parallel session: a Socratic-alignment step 0 in the workflow (2–3 scope questions before scaffolding when the idea is ambiguous, answers written straight into `PROTOTYPE.md`), the root `plugin.json` converged to the package description + review prompts, and port-hunting test hardening (retries-exhausted path; `npm start` on a busy explicit PORT exits 1 with the one-line message and no stack internals).
 - Tests: engine + consistency suite 73 → 79.
 - Fix: the tests line of a check verdict says `1 file` when a single test file ran.
+- Feature: `list --json` — machine-readable template and feature introspection (`{ ok, version, templates, features }`) for agents and tooling composing on top of the catalog; the plain form is unchanged.
 - Docs: `docs/how-to-use.md` — the complete user walkthrough (every install path, the first-prototype flow, a live-captured worked session, command reference, troubleshooting), relayed from the how-to-use workflow with every captured line re-verified against the current engine; linked from the README quickstart and shipped in the npm tarball.
 
 ## 1.0.1
