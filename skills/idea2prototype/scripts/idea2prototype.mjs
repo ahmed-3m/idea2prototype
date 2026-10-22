@@ -324,6 +324,9 @@ async function cmdCheck(rest) {
 // A queued check waits out a full run of the one ahead of it: the 5-minute
 // test ceiling plus syntax and boot.
 const CHECK_LOCK_WAIT_MS = 15 * 60_000;
+// No legitimate run holds a project lock this long (a check tops out near 6
+// minutes), so an older lock is stale even if its pid was recycled.
+const LOCK_MAX_AGE_MS = 30 * 60_000;
 
 // verify: run the same verdict on ANY Node project — used to judge projects
 // this tool never scaffolded (benchmark control arm, external code).
@@ -862,7 +865,7 @@ function resolveTargetDir(dir) {
 // A UTF-8 BOM (Windows editors add one on save) is not corruption.
 async function readMarker(projectDir) {
   try {
-    const marker = JSON.parse((await readFile(join(projectDir, '.idea2prototype.json'), 'utf8')).replace(/^﻿/, ''));
+    const marker = JSON.parse((await readFile(join(projectDir, '.idea2prototype.json'), 'utf8')).replace(/^\uFEFF/, ''));
     return marker && typeof marker === 'object' && !Array.isArray(marker) ? marker : null;
   } catch {
     return null;
@@ -896,20 +899,31 @@ async function withProjectLock(projectDir, waitMs, fn) {
   const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
   const deadline = Date.now() + waitMs;
   let announced = false;
+  let transient = 0;
   for (;;) {
     try {
       await writeFile(lockPath, String(process.pid), { flag: 'wx' });
       break;
     } catch (err) {
+      // Windows: creating a file another process is deleting fails with
+      // EPERM ("delete pending"), not EEXIST — measured at ~1 in 130
+      // contended attempts. That is contention, not an unusable temp dir.
+      if (['EPERM', 'EACCES', 'EBUSY'].includes(err?.code) && ++transient <= 50) {
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
       if (err?.code !== 'EEXIST') return fn(); // temp dir unusable: run unlocked rather than not at all
     }
-    const holder = Number(await readFile(lockPath, 'utf8').catch(() => ''));
+    const seen = await readFile(lockPath, 'utf8').catch(() => '');
+    const holder = Number(seen);
+    const age = Date.now() - ((await stat(lockPath).catch(() => null))?.mtimeMs ?? 0);
     // An empty file is a holder between create and write — stale only if old.
-    const stale = holder > 0
-      ? !pidAlive(holder)
-      : Date.now() - ((await stat(lockPath).catch(() => null))?.mtimeMs ?? 0) > 10_000;
+    // Past LOCK_MAX_AGE_MS any lock is stale: a recycled pid can look alive.
+    const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
     if (stale) {
-      await rm(lockPath, { force: true });
+      // Remove only the lock judged stale: another waiter may have taken it
+      // over since the read, and deleting ITS fresh lock would let two run.
+      if ((await readFile(lockPath, 'utf8').catch(() => null)) === seen) await rm(lockPath, { force: true });
       continue;
     }
     if (Date.now() > deadline) {
@@ -981,8 +995,7 @@ async function collectJsFiles(root, { skip, keep }) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!entry.name.startsWith('.')) await walk(full);
-      }
-      else if (keep(entry.name)) out.push(full);
+      } else if (keep(entry.name)) out.push(full);
     }
   }
   await walk(root);

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink, utimes } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -1579,6 +1579,25 @@ test('check waits for a live lock holder on the same project and takes over a de
   }
   const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
   assert.deepEqual(marker.features.map((f) => f.name), ['cors', 'sse']);
+});
+
+// Review of H7: pids get recycled (fast on Windows), so a crashed holder's
+// lock can name a pid that is alive again — every later run then waited out
+// the full timeout and died. A lock older than any real run is stale.
+test('a lock far older than any run is taken over even if its pid looks alive', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+
+  await writeFile(lockPath, String(process.pid)); // alive: this test process
+  const old = new Date(Date.now() - 31 * 60_000);
+  await utimes(lockPath, old, old);
+  const { stderr } = await i2p(['add', 'cors'], { cwd: projectDir, timeout: 20_000 });
+  assert.doesNotMatch(stderr, /waiting for another run/);
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
 });
 
 // Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
