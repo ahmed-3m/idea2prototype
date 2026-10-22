@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- Added: `list --json` — machine-readable introspection of the live template and feature set: one JSON document on stdout (`{ ok, version, templates, features }`), templates sorted from the live `TEMPLATES_DIR` scan, features in the human output's order. The human `list` output is unchanged, and unknown flags still die with the allowed list (`--json` now allowed). Consumers: `brainstorm2idea` v0.5.0 `handoff` uses this for live template discovery with a pinned fallback, so this release is fully backwards-compatible and non-urgent for existing users. Tests: JSON shape + parity with the human list + strictness preserved.
+
 ## 1.0.2
 
 First-trial friction fixes (2026-10-21 external review) and every confirmed finding of the 2026-10-21 adversarial stress suite (new: `tests/stress.test.mjs`, `npm run test:stress`, its own CI job + a weekly fresh-seed run) — the stress fixes first:

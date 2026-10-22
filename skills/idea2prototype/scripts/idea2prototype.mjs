@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const VERSION = '1.0.2';
+const VERSION = '1.1.0';
 const PKG_NAME = '@ahmed-3m/idea2prototype';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, '..', 'templates');
