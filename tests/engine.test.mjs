@@ -1799,3 +1799,26 @@ test('map reports an unreadable root instead of an empty success', async (t) => 
   }
   assert.deepEqual(map.unreadable, ['.']);
 });
+
+test('add validation keeps the web project green and grows test count', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'validation' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /11 tests passed/); // 3 web + 8 validation
+});
+
+test('add api-crud refuses validation as a reserved resource name', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await assert.rejects(
+    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: projectDir }),
+    (err) => /is reserved/.test(err.stderr) && /validation/.test(err.stderr),
+  );
+});
+
+test('add validation rejects cli template', async (t) => {
+  const projectDir = await scaffold(t, { template: 'cli' });
+  await assert.rejects(
+    i2p(['add', 'validation'], { cwd: projectDir }),
+    (err) => /validation applies to web\/api templates/.test(err.stderr),
+  );
+});

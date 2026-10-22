@@ -16,6 +16,7 @@ If starting from a fuzzy or unformed idea, load the `brainstorm2idea` skill and 
 - `npx @ahmed-3m/idea2prototype add cors` — CORS wrapper (preflight + access-control-* headers, origin allowlists); `cors()` wraps any handler
 - `npx @ahmed-3m/idea2prototype add sse` — Server-Sent Events stream (`GET /api/events`) + heartbeats
 - `npx @ahmed-3m/idea2prototype add worker-jobs` — persistent background job queue (`data/jobs.json`, 3 attempts) with demo routes
+- `npx @ahmed-3m/idea2prototype add validation` — request body validation (validate + validated wrapper) + tests
 - `npm run check` (inside a project) — syntax + tests + boot, four-line verdict
 - `npx @ahmed-3m/idea2prototype map` — paths + LOC + exports; read this before opening files
 

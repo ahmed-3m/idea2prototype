@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Feature: `add validation` — request body validation and handler wrapper (`validate(body, schema)` check returning `[400, { error }]` or `null`, `validated(schema)` wrapper in the `rateLimit()` pattern): flat type tags (`'string'`, `'number'`, `'boolean'`, `'array'` with optional `'?'` suffix), unknown-key rejection to catch client typos, non-object body guards, zero dependencies, pure ESM, plus unit tests.
+
 ## 1.0.2
 
 First-trial friction fixes (2026-10-21 external review) and every confirmed finding of the 2026-10-21 adversarial stress suite (new: `tests/stress.test.mjs`, `npm run test:stress`, its own CI job + a weekly fresh-seed run) — the stress fixes first:

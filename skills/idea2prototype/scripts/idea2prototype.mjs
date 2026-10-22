@@ -5,7 +5,7 @@
 // Commands:
 //   idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]
 //   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
-//                                    | cors | sse | worker-jobs
+//                                    | cors | sse | worker-jobs | validation
 //   idea2prototype check [dir] [--json]     syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
@@ -230,6 +230,19 @@ const FEATURES = {
       'demo route: delete routes/jobs.mjs (and its test) when done — jobs.mjs keeps working',
     ],
   },
+  validation: {
+    appliesTo: ['web', 'api'],
+    files: () => ({
+      'validation.mjs': 'validation.tmpl.mjs',
+      'tests/validation.test.mjs': 'test.tmpl.mjs',
+    }),
+    summary: () => [
+      'validation.mjs   validate(body, schema) check + validated(schema) handler wrapper',
+      'tests/validation.test.mjs  schema types + optional fields + unknown-key policy + wrapper cases',
+      'compose: wrap handlers with requireAuth(rateLimit(...)(validated(schema)(handler)))',
+      'no demo route to delete — import { validate, validated } from "./validation.mjs"',
+    ],
+  },
 };
 
 // api-crud resource names that would collide with another feature's data
@@ -249,6 +262,7 @@ const RESERVED_RESOURCES = new Map([
   ['cors', 'cors owns routes/cors.mjs'],
   ['cors-ping', 'cors owns /api/cors-ping'],
   ['health', 'the server answers /api/health itself'],
+  ['validation', 'the validation feature owns validation.mjs and tests/validation.test.mjs'],
 ]);
 
 async function cmdAdd(rest) {
@@ -811,7 +825,7 @@ function help() {
   SAY(`idea2prototype ${VERSION} — zero-dependency prototype scaffolds + verification`);
   SAY(``);
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
-  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs`);
+  SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs | validation`);
   SAY(`  idea2prototype check [dir] [--json]            syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
