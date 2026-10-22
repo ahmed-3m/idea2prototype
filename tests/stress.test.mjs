@@ -27,7 +27,10 @@ const DRIVER = fileURLToPath(new URL('./stress-driver.mjs', import.meta.url));
 const SEED = Number(process.env.I2P_STRESS_SEED ?? Math.floor(Math.random() * 2 ** 31));
 // A typo'd seed would silently become NaN, and every NaN run is the same run.
 if (!Number.isSafeInteger(SEED)) throw new Error(`I2P_STRESS_SEED must be an integer, got ${JSON.stringify(process.env.I2P_STRESS_SEED)}`);
-const SCALE = Math.max(0.25, Number(process.env.I2P_STRESS_SCALE ?? 1));
+const RAW_SCALE = Number(process.env.I2P_STRESS_SCALE ?? 1);
+// NaN would skip every scaled loop; Infinity would spin until the test timeout.
+if (!Number.isFinite(RAW_SCALE)) throw new Error(`I2P_STRESS_SCALE must be a finite number, got ${JSON.stringify(process.env.I2P_STRESS_SCALE)}`);
+const SCALE = Math.max(0.25, RAW_SCALE);
 const KEEP = process.env.I2P_STRESS_KEEP === '1';
 const n = (base) => Math.max(1, Math.round(base * SCALE));
 const tag = (msg) => `${msg}  [replay: I2P_STRESS_SEED=${SEED}]`;
