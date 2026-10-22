@@ -21,7 +21,7 @@ npmjs.org is primary (README.md). **Documented but not executed here** (README.m
 
 | Install | Run the engine as |
 |---|---|
-| plugin/skill (Claude Code, Cursor, ZCode) | `/proto-new <idea>` · `/proto-check` · `node "<skill-base>/scripts/idea2prototype.mjs" <cmd>` |
+| plugin/skill (Claude Code, ZCode) | `/proto-new <idea>` · `/proto-check` · `node "<skill-base>/scripts/idea2prototype.mjs" <cmd>` |
 | `npx skills add` | `npx @ahmed-3m/idea2prototype <cmd>` (`<skill-base>` is not substituted for Agent-Skills installs — SKILL.md) |
 | `npm i -g` | `i2p <cmd>` |
 | clone | `node <repo>/skills/idea2prototype/scripts/idea2prototype.mjs <cmd>` |
