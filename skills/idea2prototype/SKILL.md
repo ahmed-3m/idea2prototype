@@ -37,7 +37,7 @@ Commands:
 - `check [dir] [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects, or pass `<dir>` to check a project from outside it (no cd needed). Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
 - `verify [dir] [--json]` — same verdict on ANY Node project (judge mode)
 - `map [dir] [--json]` — compact repo map (paths + LOC + exports); run it before opening files
-- `list` — show available templates/features
+- `list [--json]` — show available templates/features
 
 ## Workflow (follow in order)
 

@@ -9,7 +9,7 @@
 //   idea2prototype check [dir] [--json]     syntax + tests + boot, compact verdict
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
-//   idea2prototype list
+//   idea2prototype list [--json]
 //
 // `check` prints a compact verdict (~10 lines) so an agent never reads raw logs.
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -719,11 +719,20 @@ async function probeServer(app, marker, started) {
 // list / help
 // ---------------------------------------------------------------------------
 async function cmdList(rest) {
-  const opts = parseFlags(rest, []);
+  const opts = parseFlags(rest, [], ['json']);
   checkPositionalCount(opts, 0, 'list takes no arguments');
   const templates = (await readdir(TEMPLATES_DIR, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name !== 'features')
     .map((d) => d.name);
+  if ('json' in opts) {
+    SAY(JSON.stringify({
+      ok: true,
+      version: VERSION,
+      templates: [...templates].sort(),
+      features: Object.keys(FEATURES),
+    }));
+    return;
+  }
   SAY(`templates: ${templates.join(', ')}`);
   SAY(`features:  ${Object.entries(FEATURES).map(([name, def]) => `${name} (${def.appliesTo.join('/')})`).join(', ')}`);
 }
@@ -806,7 +815,7 @@ function help() {
   SAY(`  idea2prototype check [dir] [--json]            syntax + tests + boot, compact verdict`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
-  SAY(`  idea2prototype list                             available templates and features`);
+  SAY(`  idea2prototype list [--json]                    available templates and features`);
   SAY(`  idea2prototype version                          print the engine version`);
 }
 
