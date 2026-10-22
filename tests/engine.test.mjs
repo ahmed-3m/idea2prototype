@@ -1681,6 +1681,34 @@ test('lock takeover never deletes a just-created holder under widened race windo
   }
 });
 
+// Review of S1e (security review): a lock that exists but cannot be read
+// (here a directory: EISDIR) retried at once with no sleep and no deadline —
+// a busy loop forever. Only a vanished lock (ENOENT) retries at once; an
+// unreadable one is waited on like a live holder.
+test('an unreadable lock is waited on, not spun on, and released by its removal', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { recursive: true, force: true }));
+  await mkdir(lockPath);
+  const child = spawn(process.execPath, [SCRIPT, 'add', 'cors'], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  t.after(() => child.kill());
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (c) => { stdout += c; });
+  child.stderr.on('data', (c) => { stderr += c; });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && !/waiting for another run/.test(stderr)) await new Promise((r) => setTimeout(r, 100));
+  assert.match(stderr, /waiting for another run \(pid \?\)/, 'an unreadable lock must be waited on');
+  assert.equal(child.exitCode, null);
+  await rm(lockPath, { recursive: true });
+  assert.equal(await exited, 0, stdout + stderr);
+  const marker = JSON.parse(await readFile(join(projectDir, '.idea2prototype.json'), 'utf8'));
+  assert.deepEqual(marker.features.map((f) => f.name), ['cors']);
+});
+
 // Stress H5: test output was capped at 16 MiB — a chatty but PASSING suite
 // was killed with ENOBUFS and judged "? failed of ?".
 test('verify passes a passing suite that logs 20 MiB', async (t) => {
