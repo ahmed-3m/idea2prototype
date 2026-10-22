@@ -1,7 +1,7 @@
 {
   "name": "idea2prototype",
   "displayName": "Idea2Prototype",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Turn ideas into tested prototypes — zero-dependency scaffolds and a four-line syntax, tests, and boot check for any coding agent.",
   "suggestedPrompts": [
     "Scaffold a verified web prototype for my idea",

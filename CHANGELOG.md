@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.2
 
-Fixes for every confirmed finding of the 2026-10-21 adversarial stress suite (new: `tests/stress.test.mjs`, `npm run test:stress`, its own CI job + a weekly fresh-seed run):
+First-trial friction fixes (2026-10-21 external review) and every confirmed finding of the 2026-10-21 adversarial stress suite (new: `tests/stress.test.mjs`, `npm run test:stress`, its own CI job + a weekly fresh-seed run) — the stress fixes first:
 
 - Fix: the web and api servers answer malformed request targets (`//%5c..%5c`, `/%E0%A4%A`, a bare `%` in a route param) with 400 — `new URL`/`decodeURIComponent` used to throw outside any handler and kill the whole server with an unhandled rejection.
 - Fix: the web and api servers reject JSON bodies nested more than 100 levels deep with 400 (a linear scan of the raw text before parsing, so a hostile body allocates nothing) — `JSON.parse` accepts depth `JSON.stringify` cannot write back, so one anonymous 20k-deep POST stored by `api-crud` made every later GET/POST of that resource answer 500 "Maximum call stack size exceeded" until a restart.
@@ -15,8 +15,6 @@ Fixes for every confirmed finding of the 2026-10-21 adversarial stress suite (ne
 - Fix: `map` skips unreadable entries (a dangling symlink, an EACCES file, an unreadable root reported as `.`) and counts them instead of crashing.
 - Tests: a focused engine-suite regression per finding above; each fails on the pre-fix code.
 
-## 1.0.2
-
 First-trial friction fixes (2026-10-21 external review):
 
 - Fix: the `web`/`api` server templates hunt past a busy port — with no explicit `PORT`, a taken 3000 falls forward to 3001, 3002, … (Vite-style, silent: the boot URL line names the port it landed on) instead of crashing with an unhandled `EADDRINUSE` stack. An explicit `PORT` never hunts: it fails with a one-line readable error. `start(0)` (dynamic OS port, what `check` boots with) is untouched.
@@ -27,6 +25,7 @@ First-trial friction fixes (2026-10-21 external review):
 - Also from the parallel session: a Socratic-alignment step 0 in the workflow (2–3 scope questions before scaffolding when the idea is ambiguous, answers written straight into `PROTOTYPE.md`), the root `plugin.json` converged to the package description + review prompts, and port-hunting test hardening (retries-exhausted path; `npm start` on a busy explicit PORT exits 1 with the one-line message and no stack internals).
 - Tests: engine + consistency suite 73 → 79.
 - Fix: the tests line of a check verdict says `1 file` when a single test file ran.
+- Docs: `docs/how-to-use.md` — the complete user walkthrough (every install path, the first-prototype flow, a live-captured worked session, command reference, troubleshooting), relayed from the how-to-use workflow with every captured line re-verified against the current engine; linked from the README quickstart and shipped in the npm tarball.
 
 ## 1.0.1
 
