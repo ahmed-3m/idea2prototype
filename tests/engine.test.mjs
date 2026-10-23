@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, cp, symlink, utimes, chmod } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { realpathSync, existsSync } from 'node:fs';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const run = promisify(execFile);
@@ -1827,4 +1827,173 @@ test('add validation rejects cli template', async (t) => {
     i2p(['add', 'validation'], { cwd: projectDir }),
     (err) => /validation applies to web\/api templates/.test(err.stderr),
   );
+});
+
+// ---------------------------------------------------------------------------
+// doctor: read-only project diagnostics
+// ---------------------------------------------------------------------------
+test('doctor on a clean web scaffold exits 0 with all checks present and no warn on stores/lock', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web', name: 'My App', idea: 'todo list' });
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /Idea2Prototype doctor/);
+  assert.match(stdout, /node\s+PASS/);
+  assert.match(stdout, /marker\s+PASS/);
+  assert.match(stdout, /engine\s+PASS/);
+  assert.match(stdout, /lock\s+PASS/);
+  assert.match(stdout, /stores\s+PASS/);
+  assert.match(stdout, /check-script\s+PASS/);
+  assert.match(stdout, /spec\s+PASS/);
+  assert.match(stdout, /routes-vs-manifest\s+PASS/);
+  assert.doesNotMatch(stdout, /stores\s+WARN/);
+  assert.doesNotMatch(stdout, /lock\s+WARN/);
+
+  const jsonRes = await i2p(['doctor', '--json'], { cwd: projectDir });
+  const doc = JSON.parse(jsonRes.stdout);
+  assert.equal(doc.tool, 'idea2prototype');
+  // macOS getcwd() canonicalizes /var -> /private/var, so compare real paths
+  assert.equal(doc.project, realpathSync(projectDir));
+  assert.ok(Array.isArray(doc.checks));
+  assert.equal(doc.checks.length, 8);
+  const names = doc.checks.map((c) => c.name);
+  assert.deepEqual(names, ['node', 'marker', 'engine', 'lock', 'stores', 'check-script', 'spec', 'routes-vs-manifest']);
+  assert.ok(doc.checks.every((c) => c.status === 'pass'));
+});
+
+test('doctor reports engine drift when marker version differs from running engine', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.version = '0.9.0';
+  await writeFile(markerPath, JSON.stringify(marker, null, 2) + '\n');
+
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /engine\s+NOTE\s+scaffolded by v0\.9\.0, engine v/);
+});
+
+test('doctor warns on quarantined corrupt data stores and names them', async (t) => {
+  const projectDir = await scaffold(t, {});
+  await mkdir(join(projectDir, 'data'), { recursive: true });
+  await writeFile(join(projectDir, 'data', 'x.json.corrupt-123'), 'broken json');
+
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /stores\s+WARN/);
+  assert.match(stdout, /x\.json\.corrupt-123/);
+});
+
+test('doctor reports a stale lock file and does not delete or acquire it', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const real = realpathSync.native(projectDir);
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  t.after(() => rm(lockPath, { force: true }));
+
+  await writeFile(lockPath, String(process.pid));
+  const old = new Date(Date.now() - 31 * 60_000);
+  await utimes(lockPath, old, old);
+
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /lock\s+WARN/);
+  assert.match(stdout, /stale/);
+  assert.ok(existsSync(lockPath), 'doctor must not delete the lock file');
+  const content = await readFile(lockPath, 'utf8');
+  assert.equal(content, String(process.pid), 'doctor must not acquire or overwrite the lock');
+});
+
+test('doctor dies on a foreign directory without .idea2prototype.json', async (t) => {
+  const emptyDir = await mkdtemp(join(tmpdir(), 'i2p-foreign-'));
+  t.after(() => rm(emptyDir, { recursive: true, force: true }));
+
+  await assert.rejects(
+    i2p(['doctor'], { cwd: emptyDir }),
+    (err) => /not a idea2prototype project/.test(err.stderr),
+  );
+});
+
+test('doctor reports note on untouched placeholder in PROTOTYPE.md', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web' });
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /spec\s+NOTE/);
+  assert.match(stdout, /placeholder/);
+});
+
+test('doctor reports note on unclaimed routes or removed feature files without failing', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'api-crud', resource: 'items' });
+  await writeFile(join(projectDir, 'routes', 'custom.mjs'), 'export default [];\n');
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /routes-vs-manifest\s+NOTE/);
+  assert.match(stdout, /unclaimed route/);
+});
+
+test('doctor accepts target directory argument', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web', name: 'My App', idea: 'todo list' });
+  const { stdout } = await i2p(['doctor', 'app'], { cwd: dirname(projectDir) });
+  assert.match(stdout, /Idea2Prototype doctor/);
+  assert.match(stdout, /node\s+PASS/);
+  await assert.rejects(
+    i2p(['doctor', 'nonexistent-directory-xyz'], { cwd: dirname(projectDir) }),
+    (err) => /no such directory/.test(err.stderr),
+  );
+});
+
+test('doctor diagnoses damaged marker feature records instead of crashing', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'validation' });
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.features.push(null, { name: 'constructor' }); // malformed + inherited-name trap
+  await writeFile(markerPath, JSON.stringify(marker, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /marker\s+WARN.*1 malformed feature record/);
+  // the {name:'constructor'} entry is structurally valid but unknown — the
+  // own-property lookup must ignore it, not call Object constructor's files()
+  assert.match(stdout, /routes-vs-manifest\s+PASS/);
+});
+
+test('doctor warns on scripts.check that pins something other than this engine', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const pkgPath = join(projectDir, 'package.json');
+  const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+  const bogus = [
+    'npx -y some-other-package check',              // wrong package
+    'npx -y @ahmed-3m/idea2prototype check',        // right package, unversioned
+    'node missing-file.mjs check',                  // not this engine's script
+  ];
+  for (const cmd of bogus) {
+    pkg.scripts.check = cmd;
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+    const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+    assert.match(stdout, /check-script\s+WARN/, `must warn on: ${cmd}`);
+  }
+  // the real generated forms still pass
+  pkg.scripts.check = `npx -y @ahmed-3m/idea2prototype@1.1.0 check`;
+  await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /check-script\s+PASS.*registry/);
+});
+
+test('doctor --json carries the top-level status and reports a fresh active lock without deleting it', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web', name: 'My App', idea: 'todo list' });
+  const clean = JSON.parse((await i2p(['doctor', '--json'], { cwd: projectDir })).stdout);
+  assert.equal(clean.status, 'PASS');
+
+  // a fresh lock held by a live pid (this test runner) is an ACTIVE warning,
+  // never stale, and doctor must leave it in place
+  const { createHash } = await import('node:crypto');
+  const { realpathSync: rps } = await import('node:fs');
+  const key = process.platform === 'win32' ? rps.native(projectDir).toLowerCase() : rps.native(projectDir);
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  await writeFile(lockPath, String(process.pid));
+  t.after(() => rm(lockPath, { force: true }));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /lock\s+WARN\s+active lock file/);
+  assert.ok(existsSync(lockPath), 'doctor must not delete the lock it observed');
+});
+
+test('doctor warns when the marker features field is not a list', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.features = {};
+  await writeFile(markerPath, JSON.stringify(marker, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /marker\s+WARN.*"features" is not a list/);
 });

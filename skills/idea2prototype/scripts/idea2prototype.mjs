@@ -7,6 +7,7 @@
 //   idea2prototype add <feature>     api-crud --resource <name> | auth-local | upload | rate-limit
 //                                    | cors | sse | worker-jobs | validation
 //   idea2prototype check [dir] [--json]     syntax + tests + boot, compact verdict
+//   idea2prototype doctor [dir] [--json]    read-only project diagnostics
 //   idea2prototype verify [dir] [--json]    same verdict on ANY Node project
 //   idea2prototype map [dir] [--json]       repo map: paths + LOC + exports
 //   idea2prototype list [--json]
@@ -349,6 +350,290 @@ async function cmdVerify(rest) {
   checkPositionalCount(opts, 1, 'verify takes one optional directory (verify [dir])');
   const target = resolveTargetDir(opts._[0]);
   return withProjectLock(target, CHECK_LOCK_WAIT_MS, () => runChecks(target, 'json' in opts, 'verify'));
+}
+
+// ---------------------------------------------------------------------------
+// doctor — read-only project diagnostics
+// ---------------------------------------------------------------------------
+async function cmdDoctor(rest) {
+  const opts = parseFlags(rest, [], ['json']);
+  checkPositionalCount(opts, 1, 'doctor takes one optional directory (doctor [dir])');
+  const target = resolveTargetDir(opts._[0]);
+  const marker = await loadMarker(target); // target must be a idea2prototype project
+  return runDoctor(target, marker, 'json' in opts);
+}
+
+async function runDoctor(projectDir, marker, asJson) {
+  const checks = [];
+  checks.push(checkNode());
+  checks.push(checkMarker(marker));
+  checks.push(checkEngine(marker));
+  checks.push(await checkLock(projectDir));
+  checks.push(await checkStores(projectDir));
+  checks.push(await checkCheckScript(projectDir));
+  checks.push(await checkSpec(projectDir));
+  checks.push(await checkRoutesVsManifest(projectDir, marker));
+
+  const warnCount = checks.filter((c) => c.status === 'warn').length;
+  const summary = warnCount > 0 ? 'WARN' : 'PASS';
+  if (asJson) {
+    SAY(JSON.stringify({
+      tool: 'idea2prototype',
+      version: VERSION,
+      project: projectDir,
+      status: summary,
+      checks,
+    }, null, 2));
+  } else {
+    const passedCount = checks.filter((c) => c.status === 'pass').length;
+    SAY(``);
+    SAY(`Idea2Prototype doctor — ${summary} (${passedCount}/${checks.length} passed)  [${projectDir}]`);
+    for (const c of checks) {
+      const icon = c.status === 'pass' ? 'PASS ' : c.status === 'warn' ? 'WARN ' : 'NOTE ';
+      SAY(`  ${c.name.padEnd(18)} ${icon} ${c.detail}`);
+      for (const note of c.notes ?? []) SAY(`      ${note}`);
+    }
+  }
+  process.exitCode = 0;
+}
+
+function checkNode() {
+  const match = /^v?(\d+)\.(\d+)/.exec(process.version);
+  const major = match ? Number(match[1]) : 0;
+  const minor = match ? Number(match[2]) : 0;
+  const ok = major > 18 || (major === 18 && minor >= 17);
+  return ok
+    ? { name: 'node', status: 'pass', detail: `${process.version} (>= 18.17)` }
+    : { name: 'node', status: 'warn', detail: `${process.version} is below engine floor (>= 18.17)` };
+}
+
+// Marker feature entries are hand-editable; doctor must diagnose damage,
+// never crash on it. Valid: 'name' or { name, resource? } — and api-crud
+// always carries its resource (add refuses to write it without one).
+function validFeatureEntries(marker) {
+  const features = marker.features;
+  if (features === undefined || features === null) return { valid: [], malformed: 0 };
+  // a present-but-non-list field is the same damage `add` dies on — diagnose,
+  // never treat as an empty list
+  if (!Array.isArray(features)) return { valid: [], malformed: 1, nonList: true };
+  const valid = [];
+  let malformed = 0;
+  for (const f of features) {
+    if (typeof f === 'string' && f) valid.push(f);
+    else if (f && typeof f === 'object' && typeof f.name === 'string'
+      && (f.name !== 'api-crud' || typeof f.resource === 'string')) valid.push(f);
+    else malformed++;
+  }
+  return { valid, malformed };
+}
+
+function checkMarker(marker) {
+  const { valid, malformed, nonList } = validFeatureEntries(marker);
+  if (nonList) {
+    return {
+      name: 'marker',
+      status: 'warn',
+      detail: `"features" is not a list — fix it by hand or restore it from git`,
+    };
+  }
+  const count = valid.length + malformed;
+  let detail = `${marker.template ?? 'unknown'} template, ${count} feature${count === 1 ? '' : 's'}`;
+  if (valid.length > 0) {
+    const names = valid.map((f) => (typeof f === 'string' ? f : (f.resource ? `${f.name}:${f.resource}` : f.name)));
+    const namesStr = names.join(', ');
+    if (namesStr.length <= 40) {
+      detail += ` (${namesStr})`;
+    }
+  }
+  if (malformed > 0) {
+    detail += ` — ${malformed} malformed feature record${malformed === 1 ? '' : 's'} (expect { name } entries)`;
+    return { name: 'marker', status: 'warn', detail };
+  }
+  return { name: 'marker', status: 'pass', detail };
+}
+
+function checkEngine(marker) {
+  if (marker.version === VERSION) {
+    return { name: 'engine', status: 'pass', detail: `scaffold v${marker.version} matches engine v${VERSION}` };
+  }
+  return {
+    name: 'engine',
+    status: 'note',
+    detail: `scaffolded by v${marker.version ?? '?'}, engine v${VERSION} — generated files may differ`,
+  };
+}
+
+function projectLockPath(projectDir) {
+  let real = projectDir;
+  try {
+    real = realpathSync.native(projectDir);
+  } catch {}
+  const key = process.platform === 'win32' ? real.toLowerCase() : real;
+  return join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+}
+
+async function checkLock(projectDir) {
+  const lockPath = projectLockPath(projectDir);
+  let st;
+  try {
+    st = await stat(lockPath);
+  } catch (err) {
+    // only a genuinely missing path means "no lock" — an unreadable one is a
+    // diagnosis, not absence
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+      return { name: 'lock', status: 'pass', detail: 'no lock file' };
+    }
+    return { name: 'lock', status: 'warn', detail: `lock file unreadable (${err?.code ?? err})` };
+  }
+  const age = Date.now() - st.mtimeMs;
+  const ageSec = Math.round(age / 1000);
+  const ageStr = ageSec >= 60 ? `${Math.round(ageSec / 60)}m` : `${ageSec}s`;
+  let holder = 0;
+  try {
+    holder = Number((await readFile(lockPath, 'utf8')).trim()) || 0;
+  } catch {
+    // exists but cannot be read: report without inferring a pid (an active
+    // lock must never be judged stale on a read failure)
+    return { name: 'lock', status: 'warn', detail: `lock file exists but is unreadable (${ageStr} old)` };
+  }
+  const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
+  if (stale) {
+    const reason = age > LOCK_MAX_AGE_MS
+      ? `exceeds ${Math.round(LOCK_MAX_AGE_MS / 60_000)}m limit`
+      : (holder > 0 && !pidAlive(holder) ? `pid ${holder} dead` : 'empty and old');
+    return {
+      name: 'lock',
+      status: 'warn',
+      detail: `stale lock file (${ageStr} old${holder ? `, pid ${holder}` : ''} — ${reason})`,
+    };
+  }
+  return {
+    name: 'lock',
+    status: 'warn',
+    detail: `active lock file (${ageStr} old${holder ? `, pid ${holder}` : ''})`,
+  };
+}
+
+async function checkStores(projectDir) {
+  const dataDir = join(projectDir, 'data');
+  let entries;
+  try {
+    entries = await readdir(dataDir);
+  } catch (err) {
+    // no data/ yet is a normal fresh scaffold; anything else is a diagnosis
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+      return { name: 'stores', status: 'pass', detail: '0 corrupt stores quarantined' };
+    }
+    return { name: 'stores', status: 'warn', detail: `data/ unreadable (${err?.code ?? err})` };
+  }
+  const corrupt = entries.filter((name) => name.includes('.json.corrupt-')).sort();
+  if (!corrupt.length) {
+    return { name: 'stores', status: 'pass', detail: '0 corrupt stores quarantined' };
+  }
+  return {
+    name: 'stores',
+    status: 'warn',
+    detail: `${corrupt.length} quarantined store${corrupt.length === 1 ? '' : 's'}: ${corrupt.join(', ')}`,
+    notes: ['the store was quarantined on a past read; bytes preserved'],
+  };
+}
+
+async function checkCheckScript(projectDir) {
+  const pkgPath = join(projectDir, 'package.json');
+  let pkg;
+  try {
+    pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+  } catch {
+    return { name: 'check-script', status: 'warn', detail: 'package.json missing or invalid' };
+  }
+  const checkCmd = pkg?.scripts?.check;
+  if (!checkCmd || typeof checkCmd !== 'string') {
+    return { name: 'check-script', status: 'warn', detail: 'package.json scripts.check is missing' };
+  }
+  // The two documented pin forms, exactly: a node run of THIS engine's script
+  // file, or a versioned npx of THIS package — anything else is not a pin.
+  const cmd = checkCmd.trim();
+  const isEnginePath = /^node\s+(".+?idea2prototype\.mjs"|\S*idea2prototype\.mjs)\s+check$/i.test(cmd);
+  const isNpxRegistry = new RegExp(`^npx\\s+-y\\s+${PKG_NAME.replace(/[\/@]/g, (c) => '\\' + c)}@\\d+\\.\\d+\\.\\d+\\s+check$`).test(cmd);
+  if (isEnginePath || isNpxRegistry) {
+    return {
+      name: 'check-script',
+      status: 'pass',
+      detail: `npm run check pinned (${isEnginePath ? 'engine path' : 'registry'})`,
+    };
+  }
+  return {
+    name: 'check-script',
+    status: 'warn',
+    detail: `scripts.check is mangled: "${checkCmd}"`,
+  };
+}
+
+async function checkSpec(projectDir) {
+  const specPath = join(projectDir, 'PROTOTYPE.md');
+  let content;
+  try {
+    content = await readFile(specPath, 'utf8');
+  } catch {
+    return { name: 'spec', status: 'note', detail: 'no PROTOTYPE.md spec found' };
+  }
+  const PLACEHOLDER = '(describe the idea in one sentence)';
+  if (content.includes(PLACEHOLDER)) {
+    return {
+      name: 'spec',
+      status: 'note',
+      detail: 'PROTOTYPE.md has untouched placeholder — fill Goal and Core flows',
+    };
+  }
+  return { name: 'spec', status: 'pass', detail: 'PROTOTYPE.md spec initialized' };
+}
+
+async function checkRoutesVsManifest(projectDir, marker) {
+  const routesDir = join(projectDir, 'routes');
+  let routeFiles = [];
+  try {
+    routeFiles = (await readdir(routesDir)).filter((f) => f.endsWith('.mjs'));
+  } catch {}
+
+  const claimedRoutes = new Set();
+  const missingFiles = [];
+  const { valid: features } = validFeatureEntries(marker ?? {});
+  for (const f of features) {
+    const featName = typeof f === 'string' ? f : f.name;
+    // own-property lookup: a hand-edited entry named "constructor" must not
+    // resolve to the inherited Object constructor
+    const def = Object.prototype.hasOwnProperty.call(FEATURES, featName) ? FEATURES[featName] : null;
+    if (!def) continue;
+    const files = def.files(typeof f === 'string' ? {} : f);
+    for (const rel of Object.keys(files)) {
+      if (!existsSync(join(projectDir, rel))) {
+        missingFiles.push(rel);
+      }
+      if (rel.startsWith('routes/') && rel.endsWith('.mjs')) {
+        claimedRoutes.add(basename(rel));
+      }
+    }
+  }
+
+  const unclaimed = routeFiles.filter((f) => !claimedRoutes.has(f)).sort();
+  missingFiles.sort();
+
+  if (!unclaimed.length && !missingFiles.length) {
+    return { name: 'routes-vs-manifest', status: 'pass', detail: 'routes and manifest match' };
+  }
+
+  const parts = [];
+  if (unclaimed.length) {
+    parts.push(`${unclaimed.length} unclaimed route${unclaimed.length === 1 ? '' : 's'} (${unclaimed.join(', ')})`);
+  }
+  if (missingFiles.length) {
+    parts.push(`${missingFiles.length} demo/feature file${missingFiles.length === 1 ? '' : 's'} absent (${missingFiles.join(', ')})`);
+  }
+  return {
+    name: 'routes-vs-manifest',
+    status: 'note',
+    detail: parts.join('; '),
+  };
 }
 
 async function runChecks(projectDir, asJson, mode = 'check') {
@@ -827,6 +1112,7 @@ function help() {
   SAY(`  idea2prototype new <dir> [--template web|api|cli|worker|library] [--name "..."] [--idea "..."]`);
   SAY(`  idea2prototype add <feature> [options]       api-crud --resource <n> | auth-local | upload | rate-limit | cors | sse | worker-jobs | validation`);
   SAY(`  idea2prototype check [dir] [--json]            syntax + tests + boot, compact verdict`);
+  SAY(`  idea2prototype doctor [dir] [--json]           read-only project diagnostics`);
   SAY(`  idea2prototype verify [dir] [--json]            same verdict on ANY Node project (judge mode)`);
   SAY(`  idea2prototype map [dir] [--json]               compact repo map: paths + LOC + exports`);
   SAY(`  idea2prototype list [--json]                    available templates and features`);
@@ -916,14 +1202,7 @@ async function loadMarker(projectDir = process.cwd()) {
 // unlocked; read-only verdicts (check/verify) warn and run anyway, so a
 // sandbox with an unwritable temp dir still gets a verdict.
 async function withProjectLock(projectDir, waitMs, fn, { required = false } = {}) {
-  // realpath: one project reached via a symlink, /private/var vs /var, or a
-  // different drive-letter case must still map to ONE lock.
-  let real = projectDir;
-  try {
-    real = realpathSync.native(projectDir);
-  } catch {}
-  const key = process.platform === 'win32' ? real.toLowerCase() : real;
-  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  const lockPath = projectLockPath(projectDir);
   const deadline = Date.now() + waitMs;
   let announced = false;
   let transient = 0;
@@ -1110,6 +1389,7 @@ try {
     case 'new': await cmdNew(rest); break;
     case 'add': await cmdAdd(rest); break;
     case 'check': await cmdCheck(rest); break;
+    case 'doctor': await cmdDoctor(rest); break;
     case 'verify': await cmdVerify(rest); break;
     case 'map': await cmdMap(rest); break;
     case 'list': await cmdList(rest); break;
