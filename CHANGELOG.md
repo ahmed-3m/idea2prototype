@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - Feature: `add validation` — request body validation and handler wrapper (`validate(body, schema)` check returning `[400, { error }]` or `null`, `validated(schema)` wrapper in the `rateLimit()` pattern): flat type tags (`'string'`, `'number'`, `'boolean'`, `'array'` with optional `'?'` suffix), unknown-key rejection to catch client typos, non-object body guards, zero dependencies, pure ESM, plus unit tests.
 - Feature: `doctor [dir] [--json]` — read-only project diagnostics printed in the compact verdict style: checks Node version against the engine floor (>= 18.17), marker parse + feature count, engine version drift, lock file presence and age vs staleness threshold (observing only, never acquiring or deleting), quarantined corrupt data stores (`data/*.json.corrupt-*`), package.json `scripts.check` pinning, PROTOTYPE.md spec placeholder state, and routes vs manifest drift.

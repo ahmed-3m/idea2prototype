@@ -7,7 +7,7 @@
   <a href="https://nodejs.org/en/about/previous-releases"><img src="https://img.shields.io/badge/node-%3E%3D18.17-green.svg" alt="Node 18.17 or later"></a>
 </p>
 
-**Status:** v1.1.0 · actively maintained · 1.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
+**Status:** v1.2.0 · actively maintained · 1.x — the check/verify contract and template shapes are stable; new capabilities arrive as `add` modules.
 
 Your coding agent spends the turn writing a server and a test harness, then reads the log to see if it boots. Idea2Prototype is one Node file, with zero dependencies, on Node >= 18.17. It scaffolds that harness and prints syntax, tests, and boot in four lines.
 
