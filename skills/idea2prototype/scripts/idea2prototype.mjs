@@ -411,7 +411,11 @@ function checkNode() {
 // never crash on it. Valid: 'name' or { name, resource? } — and api-crud
 // always carries its resource (add refuses to write it without one).
 function validFeatureEntries(marker) {
-  const features = Array.isArray(marker.features) ? marker.features : [];
+  const features = marker.features;
+  if (features === undefined || features === null) return { valid: [], malformed: 0 };
+  // a present-but-non-list field is the same damage `add` dies on — diagnose,
+  // never treat as an empty list
+  if (!Array.isArray(features)) return { valid: [], malformed: 1, nonList: true };
   const valid = [];
   let malformed = 0;
   for (const f of features) {
@@ -424,7 +428,14 @@ function validFeatureEntries(marker) {
 }
 
 function checkMarker(marker) {
-  const { valid, malformed } = validFeatureEntries(marker);
+  const { valid, malformed, nonList } = validFeatureEntries(marker);
+  if (nonList) {
+    return {
+      name: 'marker',
+      status: 'warn',
+      detail: `"features" is not a list — fix it by hand or restore it from git`,
+    };
+  }
   const count = valid.length + malformed;
   let detail = `${marker.template ?? 'unknown'} template, ${count} feature${count === 1 ? '' : 's'}`;
   if (valid.length > 0) {

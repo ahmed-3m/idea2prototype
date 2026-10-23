@@ -1987,3 +1987,13 @@ test('doctor --json carries the top-level status and reports a fresh active lock
   assert.match(stdout, /lock\s+WARN\s+active lock file/);
   assert.ok(existsSync(lockPath), 'doctor must not delete the lock it observed');
 });
+
+test('doctor warns when the marker features field is not a list', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.features = {};
+  await writeFile(markerPath, JSON.stringify(marker, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /marker\s+WARN.*"features" is not a list/);
+});
