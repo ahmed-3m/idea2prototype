@@ -1,6 +1,6 @@
 {
   "name": "@ahmed-3m/idea2prototype",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Turn ideas into tested prototypes — zero-dependency scaffolds and a four-line syntax, tests, and boot check for any coding agent.",
   "type": "module",
   "license": "MIT",
