@@ -1850,7 +1850,8 @@ test('doctor on a clean web scaffold exits 0 with all checks present and no warn
   const jsonRes = await i2p(['doctor', '--json'], { cwd: projectDir });
   const doc = JSON.parse(jsonRes.stdout);
   assert.equal(doc.tool, 'idea2prototype');
-  assert.equal(doc.project, projectDir);
+  // macOS getcwd() canonicalizes /var -> /private/var, so compare real paths
+  assert.equal(doc.project, realpathSync(projectDir));
   assert.ok(Array.isArray(doc.checks));
   assert.equal(doc.checks.length, 8);
   const names = doc.checks.map((c) => c.name);
