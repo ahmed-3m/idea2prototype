@@ -1934,3 +1934,38 @@ test('doctor accepts target directory argument', async (t) => {
     (err) => /no such directory/.test(err.stderr),
   );
 });
+
+test('doctor diagnoses damaged marker feature records instead of crashing', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'validation' });
+  const markerPath = join(projectDir, '.idea2prototype.json');
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  marker.features.push(null, { name: 'constructor' }); // malformed + inherited-name trap
+  await writeFile(markerPath, JSON.stringify(marker, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /marker\s+WARN.*1 malformed feature record/);
+  // the {name:'constructor'} entry is structurally valid but unknown — the
+  // own-property lookup must ignore it, not call Object constructor's files()
+  assert.match(stdout, /routes-vs-manifest\s+PASS/);
+});
+
+test('doctor warns on scripts.check that pins something other than this engine', async (t) => {
+  const projectDir = await scaffold(t, {});
+  const pkgPath = join(projectDir, 'package.json');
+  const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+  const bogus = [
+    'npx -y some-other-package check',              // wrong package
+    'npx -y @ahmed-3m/idea2prototype check',        // right package, unversioned
+    'node missing-file.mjs check',                  // not this engine's script
+  ];
+  for (const cmd of bogus) {
+    pkg.scripts.check = cmd;
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+    const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+    assert.match(stdout, /check-script\s+WARN/, `must warn on: ${cmd}`);
+  }
+  // the real generated forms still pass
+  pkg.scripts.check = `npx -y @ahmed-3m/idea2prototype@1.1.0 check`;
+  await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /check-script\s+PASS.*registry/);
+});

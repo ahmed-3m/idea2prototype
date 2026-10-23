@@ -406,16 +406,33 @@ function checkNode() {
     : { name: 'node', status: 'warn', detail: `${process.version} is below engine floor (>= 18.17)` };
 }
 
-function checkMarker(marker) {
+// Marker feature entries are hand-editable; doctor must diagnose damage,
+// never crash on it. Valid: 'name' or { name, resource? }.
+function validFeatureEntries(marker) {
   const features = Array.isArray(marker.features) ? marker.features : [];
-  const count = features.length;
+  const valid = [];
+  let malformed = 0;
+  for (const f of features) {
+    if (typeof f === 'string' || (f && typeof f === 'object' && typeof f.name === 'string')) valid.push(f);
+    else malformed++;
+  }
+  return { valid, malformed };
+}
+
+function checkMarker(marker) {
+  const { valid, malformed } = validFeatureEntries(marker);
+  const count = valid.length + malformed;
   let detail = `${marker.template ?? 'unknown'} template, ${count} feature${count === 1 ? '' : 's'}`;
-  if (count > 0) {
-    const names = features.map((f) => (typeof f === 'string' ? f : (f.resource ? `${f.name}:${f.resource}` : f.name)));
+  if (valid.length > 0) {
+    const names = valid.map((f) => (typeof f === 'string' ? f : (f.resource ? `${f.name}:${f.resource}` : f.name)));
     const namesStr = names.join(', ');
     if (namesStr.length <= 40) {
       detail += ` (${namesStr})`;
     }
+  }
+  if (malformed > 0) {
+    detail += ` — ${malformed} malformed feature record${malformed === 1 ? '' : 's'} (expect { name } entries)`;
+    return { name: 'marker', status: 'warn', detail };
   }
   return { name: 'marker', status: 'pass', detail };
 }
@@ -445,18 +462,26 @@ async function checkLock(projectDir) {
   let st;
   try {
     st = await stat(lockPath);
-  } catch {
-    return { name: 'lock', status: 'pass', detail: 'no lock file' };
+  } catch (err) {
+    // only a genuinely missing path means "no lock" — an unreadable one is a
+    // diagnosis, not absence
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+      return { name: 'lock', status: 'pass', detail: 'no lock file' };
+    }
+    return { name: 'lock', status: 'warn', detail: `lock file unreadable (${err?.code ?? err})` };
   }
-  let holder = 0;
-  try {
-    const seen = await readFile(lockPath, 'utf8');
-    holder = Number(seen.trim()) || 0;
-  } catch {}
   const age = Date.now() - st.mtimeMs;
   const ageSec = Math.round(age / 1000);
-  const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
   const ageStr = ageSec >= 60 ? `${Math.round(ageSec / 60)}m` : `${ageSec}s`;
+  let holder = 0;
+  try {
+    holder = Number((await readFile(lockPath, 'utf8')).trim()) || 0;
+  } catch {
+    // exists but cannot be read: report without inferring a pid (an active
+    // lock must never be judged stale on a read failure)
+    return { name: 'lock', status: 'warn', detail: `lock file exists but is unreadable (${ageStr} old)` };
+  }
+  const stale = age > LOCK_MAX_AGE_MS || (holder > 0 ? !pidAlive(holder) : age > 10_000);
   if (stale) {
     const reason = age > LOCK_MAX_AGE_MS
       ? `exceeds ${Math.round(LOCK_MAX_AGE_MS / 60_000)}m limit`
@@ -476,10 +501,16 @@ async function checkLock(projectDir) {
 
 async function checkStores(projectDir) {
   const dataDir = join(projectDir, 'data');
-  let entries = [];
+  let entries;
   try {
     entries = await readdir(dataDir);
-  } catch {}
+  } catch (err) {
+    // no data/ yet is a normal fresh scaffold; anything else is a diagnosis
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+      return { name: 'stores', status: 'pass', detail: '0 corrupt stores quarantined' };
+    }
+    return { name: 'stores', status: 'warn', detail: `data/ unreadable (${err?.code ?? err})` };
+  }
   const corrupt = entries.filter((name) => name.includes('.json.corrupt-')).sort();
   if (!corrupt.length) {
     return { name: 'stores', status: 'pass', detail: '0 corrupt stores quarantined' };
@@ -504,8 +535,11 @@ async function checkCheckScript(projectDir) {
   if (!checkCmd || typeof checkCmd !== 'string') {
     return { name: 'check-script', status: 'warn', detail: 'package.json scripts.check is missing' };
   }
-  const isEnginePath = /^node\s+(".+?"|\S+)\s+check$/i.test(checkCmd.trim());
-  const isNpxRegistry = /^npx\s+(-y\s+)?(@?[a-z0-9-_/]+)(@\S+)?\s+check$/i.test(checkCmd.trim());
+  // The two documented pin forms, exactly: a node run of THIS engine's script
+  // file, or a versioned npx of THIS package — anything else is not a pin.
+  const cmd = checkCmd.trim();
+  const isEnginePath = /^node\s+(".+?idea2prototype\.mjs?"|\S*idea2prototype\.mjs)\s+check$/i.test(cmd);
+  const isNpxRegistry = new RegExp(`^npx\\s+-y\\s+${PKG_NAME.replace(/[\/@]/g, (c) => '\\' + c)}@\\d+\\.\\d+\\.\\d+\\s+check$`).test(cmd);
   if (isEnginePath || isNpxRegistry) {
     return {
       name: 'check-script',
@@ -548,10 +582,12 @@ async function checkRoutesVsManifest(projectDir, marker) {
 
   const claimedRoutes = new Set();
   const missingFiles = [];
-  const features = Array.isArray(marker?.features) ? marker.features : [];
+  const { valid: features } = validFeatureEntries(marker ?? {});
   for (const f of features) {
     const featName = typeof f === 'string' ? f : f.name;
-    const def = FEATURES[featName];
+    // own-property lookup: a hand-edited entry named "constructor" must not
+    // resolve to the inherited Object constructor
+    const def = Object.prototype.hasOwnProperty.call(FEATURES, featName) ? FEATURES[featName] : null;
     if (!def) continue;
     const files = def.files(typeof f === 'string' ? {} : f);
     for (const rel of Object.keys(files)) {
