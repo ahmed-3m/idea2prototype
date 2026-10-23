@@ -19,6 +19,8 @@
 //     [400, { error: 'field "<key>" is required' }].
 //   - Type mismatch: invalid field types fail with
 //     [400, { error: 'field "<key>" must be a <type>' }] (or 'an array').
+//   - Null values: null never satisfies a field, even an optional one —
+//     send the field with a valid value or omit it entirely.
 //
 // Usage:
 //   // Inline:

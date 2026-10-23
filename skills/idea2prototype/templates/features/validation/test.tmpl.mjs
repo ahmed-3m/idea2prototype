@@ -72,6 +72,29 @@ test('validate(): non-object body rejected with 400', () => {
   }
 });
 
+test('validate(): null never satisfies a field, even an optional one', () => {
+  assert.deepEqual(
+    validate({ name: 'Bob', age: null, active: true, tags: [] }, SCHEMA),
+    [400, { error: 'field "age" must be a number' }],
+  );
+});
+
+test('validate(): non-finite numbers fail; __proto__ in a body is an unknown field', () => {
+  for (const age of [NaN, Infinity, -Infinity]) {
+    assert.deepEqual(
+      validate({ name: 'Bob', age, active: true, tags: [] }, SCHEMA),
+      [400, { error: 'field "age" must be a number' }],
+    );
+  }
+  // JSON.parse makes "__proto__" an own key — it must be rejected as unknown,
+  // never merged onto the object's prototype.
+  const hostile = JSON.parse('{"name":"Bob","active":true,"tags":[],"__proto__":1}');
+  assert.deepEqual(
+    validate(hostile, SCHEMA),
+    [400, { error: 'unknown field "__proto__"' }],
+  );
+});
+
 test('validated(): wraps handler, returns 400 on invalid body without invoking handler', async () => {
   let handlerRan = false;
   const wrapped = validated(SCHEMA)(async () => {

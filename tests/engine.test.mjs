@@ -1804,13 +1804,19 @@ test('add validation keeps the web project green and grows test count', async (t
   const projectDir = await scaffold(t, { feature: 'validation' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /11 tests passed/); // 3 web + 8 validation
+  assert.match(stdout, /13 tests passed/); // 3 web + 10 validation
 });
 
-test('add api-crud refuses validation as a reserved resource name', async (t) => {
-  const projectDir = await scaffold(t, {});
+test('add api-crud refuses validation as a reserved resource name (both add orders)', async (t) => {
+  const bare = await scaffold(t, {});
   await assert.rejects(
-    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: projectDir }),
+    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: bare }),
+    (err) => /is reserved/.test(err.stderr) && /validation/.test(err.stderr),
+  );
+  // the map is static, so the refusal must hold even after validation itself was added
+  const withValidation = await scaffold(t, { feature: 'validation' });
+  await assert.rejects(
+    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: withValidation }),
     (err) => /is reserved/.test(err.stderr) && /validation/.test(err.stderr),
   );
 });
