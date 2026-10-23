@@ -111,6 +111,7 @@ A boot-skip still PASSes; it is not a failed control. Several other small builds
 | `i2p new <dir> --template web\|api\|cli\|worker\|library` | scaffold a running, tested project (zero dependencies) |
 | `i2p add <feature>` | drop in a feature module with tests: `api-crud`, `auth-local`, `upload`, `rate-limit`, `cors`, `sse`, `worker-jobs`, `validation` |
 | `i2p check [dir] [--json]` | syntax + tests + boot, the verdict above (also `npm run check` inside projects) |
+| `i2p doctor [dir] [--json]` | read-only project diagnostics (node, marker, engine drift, lock, quarantined stores, check-script pin, spec state) |
 | `i2p verify [dir] [--json]` | the same verdict on any Node project — judge mode |
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |
 

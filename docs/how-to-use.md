@@ -105,6 +105,7 @@ features:  api-crud (web/api), auth-local (web/api), upload (web/api), rate-limi
 new <dir> [--template …] [--name] [--idea]   scaffold; refuses non-empty dirs
 add <feature> [options]                      no [dir] — run inside the project; only api-crud takes an option (--resource)
 check [dir] [--json]                         syntax+tests+boot; requires .idea2prototype.json (a scaffolded project)
+doctor [dir] [--json]                        read-only diagnostics: node, marker, engine drift, lock, quarantined stores, check-script pin, spec state
 verify [dir] [--json]                        same verdict on ANY Node project (judge mode): no marker, boot ok = HTTP 200–399, an empty dir FAILs
 map [dir] [--json]                           compact repo map: paths + LOC + exports
 list [--json] / version                      what's available / engine version (`--json` emits `{ok, version, templates, features}`)
