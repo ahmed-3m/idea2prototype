@@ -1804,7 +1804,7 @@ test('add validation keeps the web project green and grows test count', async (t
   const projectDir = await scaffold(t, { feature: 'validation' });
   const { stdout } = await i2p(['check'], { cwd: projectDir });
   assert.match(stdout, /PASS \(3\/3 passed\)/);
-  assert.match(stdout, /13 tests passed/); // 3 web + 10 validation
+  assert.match(stdout, /14 tests passed/); // 3 web + 11 validation
 });
 
 test('add api-crud refuses validation as a reserved resource name (both add orders)', async (t) => {

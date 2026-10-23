@@ -47,7 +47,7 @@ npmjs.org is primary (README.md). **Documented but not executed here** (README.m
    | `add cors` | routes/cors.mjs + tests | `cors({ origin, methods, credentials })`; allowlist origins |
    | `add sse` | routes/sse.mjs (GET /api/events) + tests | write chunks to `ctx.res`, return nothing; heartbeats managed for you |
    | `add worker-jobs` | jobs.mjs + routes/jobs.mjs + tests | `import { registerHandler } from './jobs.mjs'` in server code; data/jobs.json, 3 attempts |
-   | `add validation` | validation.mjs + tests | `import { validate, validated } from './validation.mjs'`; flat schemas, unknown-key rejection |
+   | `add validation` | validation.mjs + tests | `import { validate, validated } from '../validation.mjs'` from `routes/*.mjs` (`'./validation.mjs'` from root modules); flat schemas, unknown-key rejection |
 
    Wrappers compose by nesting (`POST: requireAuth(rateLimit({…})(handler))`); the demo routes (`/api/ping`, `/api/cors-ping`, `/api/events`, `/api/jobs`) are yours to delete once real ones exist. On cli/worker/library scaffolds `add` refuses: `auth-local applies to web/api templates (this project: cli)` (live; engine script).
 7. **If FAIL** — fix only what the ≤3 notes name, re-run, max 5 iterations; still failing → report notes + root cause + smallest fix. Never read raw logs. `/proto-check` runs exactly this loop (`commands/proto-check.md`).

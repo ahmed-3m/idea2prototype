@@ -240,7 +240,7 @@ const FEATURES = {
       'validation.mjs   validate(body, schema) check + validated(schema) handler wrapper',
       'tests/validation.test.mjs  schema types + optional fields + unknown-key policy + wrapper cases',
       'compose: wrap handlers with requireAuth(rateLimit(...)(validated(schema)(handler)))',
-      'no demo route to delete — import { validate, validated } from "./validation.mjs"',
+      'no demo route to delete — routes/*.mjs import "../validation.mjs", root modules "./validation.mjs"',
     ],
   },
 };

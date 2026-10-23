@@ -95,6 +95,16 @@ test('validate(): non-finite numbers fail; __proto__ in a body is an unknown fie
   );
 });
 
+test('validate(): an omitted optional field named like an Object.prototype member passes', () => {
+  // "toString" is inherited when absent — it must read as omitted, not as a function
+  assert.equal(validate({ name: 'Bob', active: true, tags: [] }, { ...SCHEMA, toString: 'string?' }), null);
+  // a present own property with that name still validates by value
+  assert.equal(
+    validate({ name: 'Bob', active: true, tags: [], toString: 'literal' }, { ...SCHEMA, toString: 'string' }),
+    null,
+  );
+});
+
 test('validated(): wraps handler, returns 400 on invalid body without invoking handler', async () => {
   let handlerRan = false;
   const wrapped = validated(SCHEMA)(async () => {

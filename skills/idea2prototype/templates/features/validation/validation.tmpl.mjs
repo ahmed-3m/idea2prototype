@@ -50,7 +50,10 @@ export function validate(body, schema) {
   for (const [key, tag] of Object.entries(schema)) {
     const isOptional = tag.endsWith('?');
     const expected = isOptional ? tag.slice(0, -1) : tag;
-    const val = body[key];
+    // own-property read: a schema field named like an Object.prototype member
+    // ("toString", "valueOf", ...) must read as absent when the body omits it,
+    // not as the inherited function.
+    const val = Object.prototype.hasOwnProperty.call(body, key) ? body[key] : undefined;
     if (val === undefined) {
       if (!isOptional) {
         return [400, { error: `field "${key}" is required` }];
