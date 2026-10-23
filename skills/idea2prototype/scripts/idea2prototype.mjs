@@ -374,17 +374,18 @@ async function runDoctor(projectDir, marker, asJson) {
   checks.push(await checkSpec(projectDir));
   checks.push(await checkRoutesVsManifest(projectDir, marker));
 
+  const warnCount = checks.filter((c) => c.status === 'warn').length;
+  const summary = warnCount > 0 ? 'WARN' : 'PASS';
   if (asJson) {
     SAY(JSON.stringify({
       tool: 'idea2prototype',
       version: VERSION,
       project: projectDir,
+      status: summary,
       checks,
     }, null, 2));
   } else {
     const passedCount = checks.filter((c) => c.status === 'pass').length;
-    const warnCount = checks.filter((c) => c.status === 'warn').length;
-    const summary = warnCount > 0 ? 'WARN' : 'PASS';
     SAY(``);
     SAY(`Idea2Prototype doctor — ${summary} (${passedCount}/${checks.length} passed)  [${projectDir}]`);
     for (const c of checks) {
@@ -407,13 +408,16 @@ function checkNode() {
 }
 
 // Marker feature entries are hand-editable; doctor must diagnose damage,
-// never crash on it. Valid: 'name' or { name, resource? }.
+// never crash on it. Valid: 'name' or { name, resource? } — and api-crud
+// always carries its resource (add refuses to write it without one).
 function validFeatureEntries(marker) {
   const features = Array.isArray(marker.features) ? marker.features : [];
   const valid = [];
   let malformed = 0;
   for (const f of features) {
-    if (typeof f === 'string' || (f && typeof f === 'object' && typeof f.name === 'string')) valid.push(f);
+    if (typeof f === 'string' && f) valid.push(f);
+    else if (f && typeof f === 'object' && typeof f.name === 'string'
+      && (f.name !== 'api-crud' || typeof f.resource === 'string')) valid.push(f);
     else malformed++;
   }
   return { valid, malformed };
@@ -538,7 +542,7 @@ async function checkCheckScript(projectDir) {
   // The two documented pin forms, exactly: a node run of THIS engine's script
   // file, or a versioned npx of THIS package — anything else is not a pin.
   const cmd = checkCmd.trim();
-  const isEnginePath = /^node\s+(".+?idea2prototype\.mjs?"|\S*idea2prototype\.mjs)\s+check$/i.test(cmd);
+  const isEnginePath = /^node\s+(".+?idea2prototype\.mjs"|\S*idea2prototype\.mjs)\s+check$/i.test(cmd);
   const isNpxRegistry = new RegExp(`^npx\\s+-y\\s+${PKG_NAME.replace(/[\/@]/g, (c) => '\\' + c)}@\\d+\\.\\d+\\.\\d+\\s+check$`).test(cmd);
   if (isEnginePath || isNpxRegistry) {
     return {

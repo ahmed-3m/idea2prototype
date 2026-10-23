@@ -36,7 +36,7 @@ Commands:
 - `add worker-jobs` — persistent background job queue inside web/api: `enqueue`/`list`/`registerHandler`, `data/jobs.json` persistence, 3 attempts with terminal `failed` state, demo `POST/GET /api/jobs` routes + tests (web/api)
 - `add validation` — request body validation: `validate(body, schema)` check, `validated(schema)` handler wrapper, unknown-key rejection + tests (web/api)
 - `check [dir] [--json]` — syntax + tests + boot, compact verdict; also wired as `npm run check` inside projects, or pass `<dir>` to check a project from outside it (no cd needed). Syntax covers server files (`node --check`) and every `.js` under `public/`, recursively (dual ESM/classic parse — broken-in-both fails)
-- `doctor [dir] [--json]` — read-only diagnostics (node, marker, engine drift, lock, quarantined stores, check-script pin, spec state)
+- `doctor [dir] [--json]` — read-only diagnostics (node, marker, engine drift, lock, quarantined stores, check-script pin, spec state, routes-vs-manifest)
 - `verify [dir] [--json]` — same verdict on ANY Node project (judge mode)
 - `map [dir] [--json]` — compact repo map (paths + LOC + exports); run it before opening files
 - `list [--json]` — show available templates/features

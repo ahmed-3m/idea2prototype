@@ -1969,3 +1969,21 @@ test('doctor warns on scripts.check that pins something other than this engine',
   const { stdout } = await i2p(['doctor'], { cwd: projectDir });
   assert.match(stdout, /check-script\s+PASS.*registry/);
 });
+
+test('doctor --json carries the top-level status and reports a fresh active lock without deleting it', async (t) => {
+  const projectDir = await scaffold(t, { template: 'web', name: 'My App', idea: 'todo list' });
+  const clean = JSON.parse((await i2p(['doctor', '--json'], { cwd: projectDir })).stdout);
+  assert.equal(clean.status, 'PASS');
+
+  // a fresh lock held by a live pid (this test runner) is an ACTIVE warning,
+  // never stale, and doctor must leave it in place
+  const { createHash } = await import('node:crypto');
+  const { realpathSync: rps } = await import('node:fs');
+  const key = process.platform === 'win32' ? rps.native(projectDir).toLowerCase() : rps.native(projectDir);
+  const lockPath = join(tmpdir(), `idea2prototype-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.lock`);
+  await writeFile(lockPath, String(process.pid));
+  t.after(() => rm(lockPath, { force: true }));
+  const { stdout } = await i2p(['doctor'], { cwd: projectDir });
+  assert.match(stdout, /lock\s+WARN\s+active lock file/);
+  assert.ok(existsSync(lockPath), 'doctor must not delete the lock it observed');
+});
