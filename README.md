@@ -57,6 +57,7 @@ The alternative is letting the agent write the scaffold.
 | `cors` | preflight, `access-control-*` headers, and an origin allowlist. |
 | `sse` | `GET /api/events` as `text/event-stream`, with heartbeats. |
 | `worker-jobs` | `data/jobs.json`, 3 attempts, then status `failed`. |
+| `validation` | flat schema validator (`validate`) and handler wrapper (`validated`). |
 
 <details>
 <summary>Prototype limits</summary>
@@ -108,7 +109,7 @@ A boot-skip still PASSes; it is not a failed control. Several other small builds
 | Command | What it does |
 |---|---|
 | `i2p new <dir> --template web\|api\|cli\|worker\|library` | scaffold a running, tested project (zero dependencies) |
-| `i2p add <feature>` | drop in a feature module with tests: `api-crud`, `auth-local`, `upload`, `rate-limit`, `cors`, `sse`, `worker-jobs` |
+| `i2p add <feature>` | drop in a feature module with tests: `api-crud`, `auth-local`, `upload`, `rate-limit`, `cors`, `sse`, `worker-jobs`, `validation` |
 | `i2p check [dir] [--json]` | syntax + tests + boot, the verdict above (also `npm run check` inside projects) |
 | `i2p verify [dir] [--json]` | the same verdict on any Node project — judge mode |
 | `i2p map [dir] [--json]` | repo map: paths + LOC + exports |

@@ -47,6 +47,7 @@ npmjs.org is primary (README.md). **Documented but not executed here** (README.m
    | `add cors` | routes/cors.mjs + tests | `cors({ origin, methods, credentials })`; allowlist origins |
    | `add sse` | routes/sse.mjs (GET /api/events) + tests | write chunks to `ctx.res`, return nothing; heartbeats managed for you |
    | `add worker-jobs` | jobs.mjs + routes/jobs.mjs + tests | `import { registerHandler } from './jobs.mjs'` in server code; data/jobs.json, 3 attempts |
+   | `add validation` | validation.mjs + tests | `import { validate, validated } from '../validation.mjs'` from `routes/*.mjs` (`'./validation.mjs'` from root modules); flat schemas, unknown-key rejection |
 
    Wrappers compose by nesting (`POST: requireAuth(rateLimit({…})(handler))`); the demo routes (`/api/ping`, `/api/cors-ping`, `/api/events`, `/api/jobs`) are yours to delete once real ones exist. On cli/worker/library scaffolds `add` refuses: `auth-local applies to web/api templates (this project: cli)` (live; engine script).
 7. **If FAIL** — fix only what the ≤3 notes name, re-run, max 5 iterations; still failing → report notes + root cause + smallest fix. Never read raw logs. `/proto-check` runs exactly this loop (`commands/proto-check.md`).
@@ -100,7 +101,7 @@ Engine output, run in this repo (`… idea2prototype.mjs list` + no-args help), 
 
 ```text
 templates: api, cli, library, web, worker
-features:  api-crud (web/api), auth-local (web/api), upload (web/api), rate-limit (web/api), cors (web/api), sse (web/api), worker-jobs (web/api)
+features:  api-crud (web/api), auth-local (web/api), upload (web/api), rate-limit (web/api), cors (web/api), sse (web/api), worker-jobs (web/api), validation (web/api)
 new <dir> [--template …] [--name] [--idea]   scaffold; refuses non-empty dirs
 add <feature> [options]                      no [dir] — run inside the project; only api-crud takes an option (--resource)
 check [dir] [--json]                         syntax+tests+boot; requires .idea2prototype.json (a scaffolded project)

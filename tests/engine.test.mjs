@@ -1799,3 +1799,32 @@ test('map reports an unreadable root instead of an empty success', async (t) => 
   }
   assert.deepEqual(map.unreadable, ['.']);
 });
+
+test('add validation keeps the web project green and grows test count', async (t) => {
+  const projectDir = await scaffold(t, { feature: 'validation' });
+  const { stdout } = await i2p(['check'], { cwd: projectDir });
+  assert.match(stdout, /PASS \(3\/3 passed\)/);
+  assert.match(stdout, /14 tests passed/); // 3 web + 11 validation
+});
+
+test('add api-crud refuses validation as a reserved resource name (both add orders)', async (t) => {
+  const bare = await scaffold(t, {});
+  await assert.rejects(
+    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: bare }),
+    (err) => /is reserved/.test(err.stderr) && /validation/.test(err.stderr),
+  );
+  // the map is static, so the refusal must hold even after validation itself was added
+  const withValidation = await scaffold(t, { feature: 'validation' });
+  await assert.rejects(
+    i2p(['add', 'api-crud', '--resource', 'validation'], { cwd: withValidation }),
+    (err) => /is reserved/.test(err.stderr) && /validation/.test(err.stderr),
+  );
+});
+
+test('add validation rejects cli template', async (t) => {
+  const projectDir = await scaffold(t, { template: 'cli' });
+  await assert.rejects(
+    i2p(['add', 'validation'], { cwd: projectDir }),
+    (err) => /validation applies to web\/api templates/.test(err.stderr),
+  );
+});
