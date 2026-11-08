@@ -136,3 +136,7 @@ If the idea is still fuzzy, [brainstorm2idea](https://github.com/ahmed-3m/brains
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+**By Ahmed Mohammed** — AI/ML engineer, Linz · [Portfolio](https://ahmed-3m.github.io) · [LinkedIn](https://www.linkedin.com/in/ahmed-3m/)
